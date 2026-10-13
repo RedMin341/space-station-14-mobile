@@ -9,16 +9,14 @@ on:
         default: ''
   push:
     branches:
-      - master
-    tags:
-      - 'v*'
+      - ss14-touch
 
 jobs:
   build-apk:
     name: Build Android Release APK
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -36,6 +34,20 @@ jobs:
           cd space-station-14
           git apply --ignore-whitespace --whitespace=nowarn ../patches/client-fixes.patch
           cd ..
+
+      - name: Configure SS14 Touch personal build
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for f in Path("Content.Android").rglob("*"):
+              if f.is_file() and f.suffix in (".cs", ".csproj", ".xml"):
+                  original = f.read_text()
+                  updated = original.replace("io.spacestation14.android", "io.ss14.touch.personal")
+                  updated = updated.replace('Label = "Space Station 14"', 'Label = "SS14 Touch"')
+                  updated = updated.replace('<string name="app_name">Space Station 14</string>', '<string name="app_name">SS14 Touch</string>')
+                  if updated != original:
+                      f.write_text(updated)
+          PY
 
       - name: Read version
         id: ver
@@ -127,18 +139,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpaceStation14-Android-Release
+          name: SS14-Touch-APK
           path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 14
 
-      - name: Release APK
-        if: ${{ github.event_name == 'push' || inputs.release_tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ steps.ver.outputs.tag }}
-          files: ${{ steps.find_apk.outputs.apk_path }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          overwrite: true
