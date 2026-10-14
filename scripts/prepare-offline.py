@@ -23,7 +23,13 @@ for rel in ['Content.Server/Content.Server.csproj', 'Content.Packaging/Content.P
 for rel in ['Content.Packaging/Content.Packaging.csproj', 'RobustToolbox/Robust.Packaging/Robust.Packaging.csproj']:
     change(root/rel, '</Project>', '<ItemGroup><Compile Remove="Program.cs" /></ItemGroup></Project>')
 
-client = engine/'Robust.Client/GameController/GameController.cs'
+# The public server DB excludes the system provider in desktop Release builds,
+# but Android uses the explicitly bundled libsqlite3.so in every configuration.
+change(root/'Content.Server.Database/Content.Server.Database.csproj',
+       "Condition=\"'$(UseSystemSqlite)' == 'True' and '$(Configuration)' != 'Release'\"",
+       "Condition=\"'$(UseSystemSqlite)' == 'True'\"")
+
+client = engine/'Robust.Client/GameController/GameController.cs' 
 change(client, '// Fobos distributes two additional modules with its server content.',
        'if (System.Environment.GetEnvironmentVariable("SS14_OFFLINE_SANDBOX") == "1")\n                    return true;\n\n                // Fobos distributes two additional modules with its server content.')
 server = engine/'Robust.Server/BaseServer.cs'
@@ -91,7 +97,7 @@ proto=[{'type':'gameMap','id':'OfflineRoom','mapName':'Комната Чёрно
 proto.append({'type':'entity','id':'OfflineTrainingStation',
               'parent':['BaseStation','BaseStationJobsSpawning','BaseStationRecords','BaseStationNanotrasen'],
               'categories':['HideSpawnMenu'],'components':[{'type':'Transform'}]})
-with zipfile.ZipFile('Content.Android/offline.zip','w',zipfile.ZIP_DEFLATED,compresslevel=5) as z:
+with zipfile.ZipFile('Content.Android/offline.zip','w',zipfile.ZIP_DEFLATED,compresslevel=1) as z:
     for f in sorted((root/'Resources').rglob('*')):
         if not f.is_file(): continue
         name=f.relative_to(root/'Resources').as_posix()

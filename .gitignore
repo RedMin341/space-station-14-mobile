@@ -16,3 +16,7 @@ obj/
 *.user
 Thumbs.db
 [Dd]esktop.ini
+
+# Generated offline payload and Python bytecode
+Content.Android/offline.zip
+__pycache__/

@@ -65,7 +65,9 @@ public sealed class OfflineActivity : Activity
         _start.Enabled = false;
         try
         {
-            // A running game must be closed first; never replace its resource archive.
+            // Each run is a fresh local world. Stop both old isolated processes first.
+            StopRoom();
+            await Task.Delay(500, cancel);
             var run = Guid.NewGuid().ToString("N");
             _status.Text = "Распаковка встроенных ресурсов…";
             var root = Root;
@@ -118,7 +120,19 @@ public sealed class OfflineActivity : Activity
         File.WriteAllText(marker, version);
     }
 
-    private void StopRoom() => StopService(new Intent(this, typeof(OfflineServerService)));
+    private void StopRoom()
+    {
+        StopService(new Intent(this, typeof(OfflineServerService)));
+        // Robust and SDL cannot be initialized twice in a process. Both children
+        // belong to this APK; never terminate the launcher or another application.
+        var manager = (ActivityManager?)GetSystemService(ActivityService);
+        foreach (var process in manager?.RunningAppProcesses ?? Array.Empty<ActivityManager.RunningAppProcessInfo>())
+        {
+            if (process.Uid == global::Android.OS.Process.MyUid() &&
+                (process.ProcessName == PackageName + ":game" || process.ProcessName == PackageName + ":sandbox"))
+                global::Android.OS.Process.KillProcess(process.Pid);
+        }
+    }
     protected override void OnDestroy()
     {
         _launch?.Cancel();
