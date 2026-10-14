@@ -14,9 +14,9 @@ for directory, expected in (("space-station-14", CONTENT), ("space-station-14/Ro
 for f in [*Path("Content.Android").rglob("*"), *Path("space-station-14/RobustToolbox").rglob("*.cs")]:
     if f.is_file() and f.suffix in (".cs", ".csproj", ".xml"):
         s = f.read_text()
-        s = s.replace("io.spacestation14.android", "io.ss14.touch.fobos276")
-        s = s.replace('Label = "Space Station 14"', 'Label = "SS14 Фобос"')
-        s = s.replace('<string name="app_name">Space Station 14</string>', '<string name="app_name">SS14 Фобос</string>')
+        s = s.replace("io.spacestation14.android", "io.ss14.touch.sandbox276").replace("io.ss14.touch.fobos276", "io.ss14.touch.sandbox276")
+        s = s.replace('Label = "Space Station 14"', 'Label = "SS14 Песочница"')
+        s = s.replace('<string name="app_name">Space Station 14</string>', '<string name="app_name">SS14 Песочница</string>')
         f.write_text(s)
 
 # Embed engine assets only. Content resources must come from the matching server,

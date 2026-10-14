@@ -1,0 +1,44 @@
+# Private training world. Never bind to LAN or advertise this server.
+[net]
+bindto = "127.0.0.1"
+port = 12121
+tickrate = 20
+[auth]
+mode = 2
+[console]
+loginlocal = true
+[status]
+enabled = false
+[hub]
+advertise = false
+[metrics]
+enabled = false
+runtime = false
+[game]
+lobbyenabled = false
+map = "OfflineRoom"
+map_rotation = false
+role_timers = false
+role_loadout_timers = false
+[admin]
+deadmin_on_join = false
+[events]
+enabled = false
+[shuttle]
+arrivals = false
+emergency = false
+preload_grids = false
+auto_call_time = 0
+[lavaland]
+auto_generate = false
+[taipan]
+enabled = false
+[procgen]
+preload = false
+[gateway]
+generator_enabled = false
+[database]
+engine = "sqlite"
+sqlite_dbpath = "offline.db"
+[thread]
+parallel_count = 2

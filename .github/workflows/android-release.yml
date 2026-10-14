@@ -1,4 +1,4 @@
-name: Build SS14 Fobos 276
+name: Build SS14 Offline Sandbox
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: ''
   push:
     branches:
-      - ss14-fobos-276
+      - ss14-offline-sandbox
 
 concurrency:
   group: fobos-android-${{ github.ref }}
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Build SS14 Fobos APK
+    name: Build Offline Sandbox APK
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,6 +70,7 @@ jobs:
           git -C space-station-14 apply --check ../patches/fobos-content.patch
           git -C space-station-14 apply ../patches/fobos-content.patch
           python3 scripts/prepare-fobos.py
+          python3 scripts/prepare-offline.py
 
       - name: Read version
         id: ver
@@ -109,6 +110,9 @@ jobs:
           chmod +x scripts/build-native-libs.sh
           ./scripts/build-native-libs.sh
 
+      - name: Build offline SQLite
+        run: bash scripts/build-offline-sqlite.sh
+
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4
         with:
@@ -120,7 +124,7 @@ jobs:
       - name: Install Android Workload
         run: dotnet workload install android
 
-      - name: Build SS14 Fobos APK
+      - name: Build Offline Sandbox APK
         run: dotnet build Content.Android/Content.Android.csproj -c Release -p:TargetOS=Android -p:UseSharedCompilation=false -p:AndroidKeyStore=true
         env:
           AndroidSigningKeyStore: ${{ github.workspace }}/Content.Android/release.keystore
@@ -169,7 +173,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SS14-Fobos-276-APK
+          name: SS14-Offline-Sandbox-EXPERIMENTAL
           path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 14
 

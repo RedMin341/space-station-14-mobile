@@ -25,7 +25,7 @@ namespace Content.Android;
 
 [Activity(
     Label = "Space Station 14",
-    MainLauncher = true,
+    MainLauncher = false,
     Icon = "@mipmap/ic_launcher",
     RoundIcon = "@mipmap/ic_launcher_round",
     Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen",

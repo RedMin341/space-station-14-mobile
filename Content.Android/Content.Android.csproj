@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>io.spacestation14.android</ApplicationId>
-    <ApplicationVersion>10</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1.9</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.0.1</ApplicationDisplayVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>NU1701;CA1416</NoWarn>
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
@@ -16,8 +16,8 @@
     <PublishTrimmed>false</PublishTrimmed>
     <TrimMode>None</TrimMode>
     <AndroidUseAssemblyStore>false</AndroidUseAssemblyStore>
-    <RunAOTCompilation>true</RunAOTCompilation>
-    <UseInterpreter>false</UseInterpreter>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <UseInterpreter>true</UseInterpreter>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
     <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
     <ExcludeSatelliteAssemblies>true</ExcludeSatelliteAssemblies>
@@ -25,6 +25,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../space-station-14/Content.Server/Content.Server.csproj" />
+    <ProjectReference Include="../space-station-14/RobustToolbox/Robust.Server/Robust.Server.csproj" />
     <ProjectReference Include="../space-station-14/Content.Client/Content.Client.csproj">
       <ExcludeAssets>native</ExcludeAssets>
     </ProjectReference>
@@ -83,6 +85,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="resources.zip" />
+    <EmbeddedResource Include="offline.zip" />
+    <EmbeddedResource Include="../offline/server.toml" LogicalName="Offline.server.toml" />
     <EmbeddedResource Include="logo-long.png" />
   </ItemGroup>
 

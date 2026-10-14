@@ -16,7 +16,8 @@ namespace Content.Android
     [Activity(
         Label = "Space Station 14",
         MainLauncher = false,
-        Exported = true,
+        Process = ":game",
+        Exported = false,
         Icon = "@mipmap/ic_launcher",
         RoundIcon = "@mipmap/ic_launcher_round",
         Theme = "@android:style/Theme.NoTitleBar.Fullscreen",
@@ -495,6 +496,7 @@ namespace Content.Android
 
         protected override void OnCreate(Bundle? savedInstanceState)
         {
+            System.Environment.SetEnvironmentVariable("SS14_OFFLINE_SANDBOX", "1");
             InstallJavaCrashHandler();
             // The SDL runtime can reset orientation at startup; enforce
             // landscape in code (manifest attribute alone doesn't stick).
@@ -555,7 +557,7 @@ namespace Content.Android
                     var names = assembly.GetManifestResourceNames();
                     foreach (var name in names)
                     {
-                        if (name.EndsWith("resources.zip"))
+                        if (name == "Content.Android.resources.zip")
                         {
                             resourceName = name;
                             break;
@@ -564,8 +566,11 @@ namespace Content.Android
                     using var inStream = assembly.GetManifestResourceStream(resourceName);
                     if (inStream != null)
                     {
-                        using var outStream = File.Create(zipFile);
-                        inStream.CopyTo(outStream);
+                        if (!File.Exists(zipFile))
+                        {
+                            using var outStream = File.Create(zipFile);
+                            inStream.CopyTo(outStream);
+                        }
                     }
                 }
             }
@@ -604,6 +609,11 @@ namespace Content.Android
             if (Instance == this)
                 Instance = null;
             base.OnDestroy();
+            if (IsFinishing)
+            {
+                StopService(new global::Android.Content.Intent(this, typeof(OfflineServerService)));
+                global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
+            }
         }
 
         private void ApplyImmersiveMode()
@@ -867,12 +877,12 @@ namespace Content.Android
                 var connectAddr = LaunchConnectAddress;
                 var ss14Addr = LaunchSs14Address;
                 var username = LaunchUsername;
-                var token = LaunchToken;
-                var userId = LaunchUserId;
-                var pubKey = LaunchPubKey;
+                string? token = null;
+                string? userId = null;
+                string? pubKey = null;
 
                 var authPath = Path.Combine(filesDir, "auth.json");
-                if (File.Exists(authPath))
+                if (false && File.Exists(authPath))
                 {
                     try
                     {
@@ -907,6 +917,7 @@ namespace Content.Android
 
                 var args = new List<string>
                 {
+                    "--cvar", "discord.enabled=false",
                     "--cvar", "thread.parallel_count=2",
                     "--cvar", "light.blur=false",
                     "--cvar", "light.soft_shadows=false",
