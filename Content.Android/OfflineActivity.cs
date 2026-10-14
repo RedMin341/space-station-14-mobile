@@ -96,7 +96,7 @@ public sealed class OfflineActivity : Activity
             StartActivity(game);
             _status.Text = "Комната работает на телефоне. После игры нажми «Остановить комнату».";
         }
-        catch (OperationCanceledException) { StopRoom(); }
+        catch (System.OperationCanceledException) { StopRoom(); }
         catch (Exception e) { StopRoom(); _status.Text = "Ошибка запуска: " + e.Message; }
         finally { _launch?.Dispose(); _launch = null; _start.Enabled = true; }
     }
