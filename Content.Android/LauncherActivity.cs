@@ -46,6 +46,10 @@ namespace Content.Android;
     ScreenOrientation = global::Android.Content.PM.ScreenOrientation.SensorLandscape)]
 public sealed class LauncherActivity : Activity
 {
+    private const int ExportCacheRequest = 7101;
+    private const int ImportCacheRequest = 7102;
+    private bool _cacheTransferBusy;
+
     private enum Tab
     {
         Servers,
@@ -118,7 +122,7 @@ public sealed class LauncherActivity : Activity
         
 
         CheckForCrashAndPrompt();
-        _ = Task.Run(() => ContentCacheManager.PruneStaleCache(this, _storage));
+        // Keep downloaded builds until the user explicitly clears the cache.
     }
 
     protected override void OnResume()
@@ -1982,7 +1986,7 @@ public sealed class LauncherActivity : Activity
 
         var cacheHeader = new TextView(this)
         {
-            Text = "Server Assets Cache:",
+            Text = "Скачанные сборки серверов:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1991,6 +1995,24 @@ public sealed class LauncherActivity : Activity
         clp.SetMargins(0, (int)(12 * density), 0, (int)(4 * density));
         cacheHeader.LayoutParameters = clp;
         view.AddView(cacheHeader);
+
+        foreach (var export in new[] { true, false })
+        {
+            var transferButton = new Button(this)
+            {
+                Text = export ? "Экспорт скачанных сборок" : "Импорт скачанных сборок",
+                TextSize = 13
+            };
+            transferButton.Click += (_, _) => PickCacheArchive(export);
+            view.AddView(transferButton);
+        }
+        var cacheHint = new TextView(this)
+        {
+            Text = "Экспорт сохраняет все скачанные сборки в ZIP. На другом телефоне или после переустановки выбери этот ZIP через «Импорт». Данные входа не переносятся. Обновлённые сборки сервера скачиваются отдельно. Импортируй только свои архивы или архивы из доверенного источника.",
+            TextSize = 12
+        };
+        cacheHint.SetTextColor(LauncherTheme.SubText);
+        view.AddView(cacheHint);
 
         var cacheSizeBytes = ContentCacheManager.GetTotalCacheSizeBytes(this);
         var clearCacheBtn = new Button(this)
@@ -2005,6 +2027,7 @@ public sealed class LauncherActivity : Activity
         clearCacheBtn.LayoutParameters = cblp;
         clearCacheBtn.Click += (_, _) =>
         {
+            if (_cacheTransferBusy || ContentDownloadService.IsDownloading) return;
             var freed = ContentCacheManager.ClearAllCache(this, _storage);
             clearCacheBtn.Text = "Clear Server Cache (0 MB)";
             Toast.MakeText(this, $"Cleared {ContentCacheManager.FormatBytes(freed)} of server assets", ToastLength.Short)?.Show();
@@ -2025,6 +2048,79 @@ public sealed class LauncherActivity : Activity
         builder.SetView(scrollView);
         builder.SetPositiveButton("Close", (IDialogInterfaceOnClickListener?)null);
         builder.Show();
+    }
+
+    private void PickCacheArchive(bool export)
+    {
+        if (_cacheTransferBusy || ContentDownloadService.IsDownloading)
+        {
+            Toast.MakeText(this, "Дождись завершения загрузки или переноса файлов.", ToastLength.Long)?.Show();
+            return;
+        }
+        if (export && !Directory.EnumerateFiles(ContentCacheManager.GetContentCacheDir(this), "*.zip").Any())
+        {
+            Toast.MakeText(this, "Пока нет скачанных сборок для экспорта.", ToastLength.Long)?.Show();
+            return;
+        }
+        var intent = new Intent(export ? Intent.ActionCreateDocument : Intent.ActionOpenDocument);
+        intent.AddCategory(Intent.CategoryOpenable);
+        intent.SetType(export ? "application/zip" : "*/*");
+        if (export) intent.PutExtra(Intent.ExtraTitle, $"SS14-server-builds-{DateTime.Now:yyyy-MM-dd}.zip");
+        try { StartActivityForResult(intent, export ? ExportCacheRequest : ImportCacheRequest); }
+        catch (Exception ex) { Toast.MakeText(this, "Не удалось открыть выбор файла: " + ex.Message, ToastLength.Long)?.Show(); }
+    }
+
+    protected override async void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode != ExportCacheRequest && requestCode != ImportCacheRequest) return;
+        var uri = data?.Data;
+        if (resultCode != Result.Ok || uri == null) return;
+        if (_cacheTransferBusy || ContentDownloadService.IsDownloading)
+        {
+            Toast.MakeText(this, "Дождись завершения загрузки и повтори перенос.", ToastLength.Long)?.Show();
+            return;
+        }
+        _cacheTransferBusy = true;
+        var export = requestCode == ExportCacheRequest;
+        var progress = new AlertDialog.Builder(this)
+            .SetTitle(export ? "Экспорт сборок" : "Импорт сборок")
+            .SetMessage("Перенос файлов… Не закрывай приложение.")
+            .SetCancelable(false).Create();
+        progress?.Show();
+        Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
+        var cacheDir = ContentCacheManager.GetContentCacheDir(this);
+        var temp = Path.Combine(CacheDir!.AbsolutePath, "server-import-" + Guid.NewGuid().ToString("N") + ".zip");
+        try
+        {
+            var count = await Task.Run(() =>
+            {
+                if (export)
+                {
+                    using var output = ContentResolver!.OpenOutputStream(uri, "wt") ?? throw new IOException("Не удалось открыть файл для записи.");
+                    return ServerCacheTransfer.Export(cacheDir, output);
+                }
+                // Document providers may return a non-seekable stream. Stage it locally.
+                using (var input = ContentResolver!.OpenInputStream(uri) ?? throw new IOException("Не удалось прочитать файл."))
+                using (var output = File.Create(temp)) ServerCacheTransfer.CopyLimited(input, output);
+                return ServerCacheTransfer.Import(cacheDir, temp);
+            });
+            Toast.MakeText(this, $"{(export ? "Экспортировано" : "Импортировано")} сборок: {count}." +
+                (export ? " Архив сохранён в выбранное место." : " Можно подключаться к серверу."), ToastLength.Long)?.Show();
+        }
+        catch (Exception ex)
+        {
+            new AlertDialog.Builder(this).SetTitle("Перенос не завершён")
+                .SetMessage(ex.Message + (export ? " Удали незавершённый ZIP и повтори экспорт." : " Проверь архив и свободное место."))
+                .SetPositiveButton("Понятно", (IDialogInterfaceOnClickListener?)null).Show();
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+            progress?.Dismiss();
+            _cacheTransferBusy = false;
+            Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
+        }
     }
 
     private void ShowEditButtonDialog(MobileButtonConfig btn, Action onSaved)
@@ -2220,6 +2316,7 @@ public sealed class LauncherActivity : Activity
 
     private async Task StartConnectingAsync(string address)
     {
+        if (_cacheTransferBusy) return;
         _storage.SetLastServer(address);
         _overlayBox.Visibility = ViewStates.Visible;
         _overlayProgress.Indeterminate = true;
@@ -2620,7 +2717,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "Фобос 276 · 0.1.7";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.8";
 
     public string GetCurrentAppVersion()
     {

@@ -61,20 +61,8 @@ public static class ContentCacheManager
     {
         try
         {
-            var oldZipName = storage.GetServerBuildZip(serverAddress);
             var newZipName = Path.GetFileName(newZipPath);
-
-            if (!string.IsNullOrEmpty(oldZipName) && !string.Equals(oldZipName, newZipName, StringComparison.OrdinalIgnoreCase))
-            {
-                var contentDir = GetContentCacheDir(context);
-                var oldZipPath = Path.Combine(contentDir, oldZipName);
-                if (File.Exists(oldZipPath))
-                {
-                    File.Delete(oldZipPath);
-                    global::Android.Util.Log.Info(Tag, $"Deleted old server build zip: {oldZipPath}");
-                }
-            }
-
+            // Keep previous builds available for export and reuse.
             storage.SetServerBuildZip(serverAddress, newZipName);
         }
         catch (Exception ex)
