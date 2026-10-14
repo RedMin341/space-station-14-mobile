@@ -86,11 +86,11 @@ public sealed class ContentDownloadService : Service
         {
             var channel = new NotificationChannel(
                 ChannelId,
-                "SS14 Content Download",
+                "Загрузка файлов SS14",
                 NotificationImportance.Low
             )
             {
-                Description = "Displays download progress in notification shade"
+                Description = "Показывает ход загрузки файлов сервера"
             };
             _notifyManager.CreateNotificationChannel(channel);
         }
@@ -134,7 +134,7 @@ public sealed class ContentDownloadService : Service
         _notifBuilder
             .SetSmallIcon(global::Android.Resource.Drawable.StatSysDownload)
             .SetContentTitle("Space Station 14")
-            .SetContentText("Connecting to server...")
+            .SetContentText("Подключение к серверу…")
             .SetOngoing(true)
             .SetOnlyAlertOnce(true)
             .SetProgress(0, 0, true)
@@ -221,7 +221,7 @@ public sealed class ContentDownloadService : Service
                 var doneBuilder = new Notification.Builder(this, ChannelId)
                     .SetSmallIcon(global::Android.Resource.Drawable.StatSysDownloadDone)
                     .SetContentTitle("Space Station 14")
-                    .SetContentText("Download completed! Tap to play.")
+                    .SetContentText("Загрузка завершена! Нажми, чтобы играть.")
                     .SetOngoing(false)
                     .SetAutoCancel(true)
                     .SetContentIntent(pendingIntent);
@@ -234,7 +234,7 @@ public sealed class ContentDownloadService : Service
         }
         catch (System.OperationCanceledException)
         {
-            DownloadFailed?.Invoke("Download canceled.");
+            DownloadFailed?.Invoke("Загрузка отменена.");
         }
         catch (Exception ex)
         {
@@ -244,7 +244,7 @@ public sealed class ContentDownloadService : Service
                 var errBuilder = new Notification.Builder(this, ChannelId)
                     .SetSmallIcon(global::Android.Resource.Drawable.StatNotifyError)
                     .SetContentTitle("Space Station 14")
-                    .SetContentText($"Download error: {ex.Message}")
+                    .SetContentText($"Ошибка загрузки: {ex.Message}")
                     .SetOngoing(false)
                     .SetAutoCancel(true)
                     .SetContentIntent(pendingIntent);

@@ -26,7 +26,7 @@ public sealed class AuthClient
     public async Task<AuthResult> AuthenticateAsync(string username, string password, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
-            return AuthResult.Fail("Username and password are required.");
+            return AuthResult.Fail("Введите имя пользователя и пароль.");
 
         var req = new AuthAuthenticateRequest(username.Trim(), password);
 
@@ -69,7 +69,7 @@ public sealed class AuthClient
                     catch
                     {
                     }
-                    return AuthResult.Fail("Invalid login or password.");
+                    return AuthResult.Fail("Неверное имя пользователя или пароль.");
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -77,7 +77,7 @@ public sealed class AuthClient
             }
         }
 
-        return AuthResult.Fail("Could not connect to authentication servers.");
+        return AuthResult.Fail("Не удалось подключиться к серверам авторизации.");
     }
 
     public async Task<bool> ValidateTokenAsync(string token, CancellationToken ct = default)

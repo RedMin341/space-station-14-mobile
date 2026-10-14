@@ -143,7 +143,7 @@ public sealed class LauncherActivity : Activity
                 _overlayProgress.Max = tot;
                 _overlayProgress.Progress = cur;
             }
-            _overlayText.Text = ContentDownloadService.CurrentStatus ?? "Downloading content...";
+            _overlayText.Text = ContentDownloadService.CurrentStatus ?? "Загрузка файлов…";
         }
     }
 
@@ -212,7 +212,7 @@ public sealed class LauncherActivity : Activity
         var discordBtn = CreateHeaderLinkButton("Discord", () => OpenUrl("https://discord.ss14.io/"));
         header.AddView(discordBtn);
 
-        var websiteBtn = CreateHeaderLinkButton("Website", () => OpenUrl("https://spacestation14.com"));
+        var websiteBtn = CreateHeaderLinkButton("Сайт", () => OpenUrl("https://spacestation14.com"));
         header.AddView(websiteBtn);
 
         var githubBtn = CreateHeaderLinkButton("GitHub", () => OpenUrl("https://github.com/SolomonNumb1/space-station-14-mobile"));
@@ -245,9 +245,9 @@ public sealed class LauncherActivity : Activity
         controlsRow.SetPadding((int)(10 * density), (int)(4 * density), (int)(10 * density), (int)(4 * density));
         controlsRow.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, (int)(42 * density));
 
-        _tabServersBtn = CreateTabButton("Servers", true);
-        _tabFavsBtn = CreateTabButton("Favorites", false);
-        _tabDirectBtn = CreateTabButton("Direct Connect", false);
+        _tabServersBtn = CreateTabButton("Серверы", true);
+        _tabFavsBtn = CreateTabButton("Избранное", false);
+        _tabDirectBtn = CreateTabButton("По адресу", false);
 
         _tabServersBtn.Click += (_, _) => SwitchTab(Tab.Servers);
         _tabFavsBtn.Click += (_, _) => SwitchTab(Tab.Favorites);
@@ -263,7 +263,7 @@ public sealed class LauncherActivity : Activity
 
         _searchInput = new EditText(this)
         {
-            Hint = "Search servers...",
+            Hint = "Поиск серверов…",
             TextSize = 12,
             InputType = global::Android.Text.InputTypes.ClassText,
             ImeOptions = (global::Android.Views.InputMethods.ImeAction)global::Android.Views.InputMethods.ImeFlags.NoExtractUi | global::Android.Views.InputMethods.ImeAction.Search
@@ -293,7 +293,7 @@ public sealed class LauncherActivity : Activity
         filterLp.SetMargins((int)(6 * density), 0, (int)(6 * density), 0);
         _filterBtn = new Button(this)
         {
-            Text = "Filters",
+            Text = "Фильтры",
             TextSize = 11,
             Typeface = Typeface.DefaultBold
         };
@@ -340,10 +340,10 @@ public sealed class LauncherActivity : Activity
         tableHeader.SetBackgroundColor(LauncherTheme.HeaderBackground);
         tableHeader.SetPadding((int)(12 * density), (int)(4 * density), (int)(12 * density), (int)(4 * density));
 
-        var thName = CreateTableHeaderText("SERVER NAME", 1f);
-        var thTime = CreateTableHeaderText("TIME", 0.35f);
-        var thPlayers = CreateTableHeaderText("PLAYERS", 0.25f);
-        var thAction = CreateTableHeaderText("CONNECT", 0.3f);
+        var thName = CreateTableHeaderText("НАЗВАНИЕ СЕРВЕРА", 1f);
+        var thTime = CreateTableHeaderText("ВРЕМЯ", 0.35f);
+        var thPlayers = CreateTableHeaderText("ИГРОКИ", 0.25f);
+        var thAction = CreateTableHeaderText("ВОЙТИ", 0.3f);
 
         tableHeader.AddView(thName);
         tableHeader.AddView(thTime);
@@ -372,7 +372,7 @@ public sealed class LauncherActivity : Activity
 
         _statusCountText = new TextView(this)
         {
-            Text = "Loading servers...",
+            Text = "Загрузка серверов…",
             TextSize = 11
         };
         _statusCountText.SetTextColor(LauncherTheme.SubText);
@@ -381,7 +381,7 @@ public sealed class LauncherActivity : Activity
 
         var settingsBtn = new Button(this)
         {
-            Text = "Settings",
+            Text = "Настройки",
             TextSize = 11
         };
         settingsBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -409,7 +409,7 @@ public sealed class LauncherActivity : Activity
 
         var logsBtn = new Button(this)
         {
-            Text = "Logs",
+            Text = "Журнал",
             TextSize = 11
         };
         logsBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -426,7 +426,7 @@ public sealed class LauncherActivity : Activity
             try
             {
                 CrashReporter.WriteCrash("ManualTest",
-                    new Exception("Test crash entry (long-pressed Logs button). If you can read this, the reporter works."));
+                    new Exception("Тестовая запись (долгое нажатие на «Журнал»). Если ты видишь этот текст, отчёты работают."));
             }
             catch { }
             e.Handled = true;
@@ -467,7 +467,7 @@ public sealed class LauncherActivity : Activity
 
         _overlayText = new TextView(this)
         {
-            Text = "Connecting...",
+            Text = "Подключение…",
             TextSize = 14,
             Typeface = Typeface.DefaultBold
         };
@@ -485,7 +485,7 @@ public sealed class LauncherActivity : Activity
 
         var cancelBtn = new Button(this)
         {
-            Text = "Cancel",
+            Text = "Отмена",
             TextSize = 12
         };
         cancelBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -613,19 +613,19 @@ public sealed class LauncherActivity : Activity
         }
         else if (!string.IsNullOrEmpty(_storage.Data.GuestUsername))
         {
-            _accountBtn.Text = $"{_storage.Data.GuestUsername} (Guest)";
+            _accountBtn.Text = $"{_storage.Data.GuestUsername} (гость)";
             _accountBtn.SetTextColor(LauncherTheme.Foreground);
         }
         else
         {
-            _accountBtn.Text = "Log in";
+            _accountBtn.Text = "Войти";
             _accountBtn.SetTextColor(LauncherTheme.SubText);
         }
     }
 
     private async Task RefreshHubServersAsync()
     {
-        _statusCountText.Text = "Querying Space Station 14 servers...";
+        _statusCountText.Text = "Получение списка серверов SS14…";
         try
         {
             var list = await _hubClient.FetchAllServersAsync(_storage.Data.HubUrls);
@@ -639,7 +639,7 @@ public sealed class LauncherActivity : Activity
         {
             RunOnUiThread(() =>
             {
-                _statusCountText.Text = $"Failed to load hub servers: {ex.Message}";
+                _statusCountText.Text = $"Не удалось загрузить список серверов: {ex.Message}";
             });
         }
     }
@@ -719,11 +719,11 @@ public sealed class LauncherActivity : Activity
 
         var sorted = items.OrderByDescending(s => s.StatusData?.Players ?? 0).ToList();
         var totalPlayers = sorted.Sum(s => s.StatusData?.Players ?? 0);
-        _statusCountText.Text = $"{sorted.Count} servers online, {totalPlayers} players total";
+        _statusCountText.Text = $"Серверов: {sorted.Count}, игроков: {totalPlayers}";
 
         if (_filterBtn != null)
         {
-            _filterBtn.Text = $"Filters ({sorted.Count} / {_servers.Count})";
+            _filterBtn.Text = $"Фильтры ({sorted.Count} / {_servers.Count})";
         }
 
         var idx = 0;
@@ -836,7 +836,7 @@ public sealed class LauncherActivity : Activity
 
         var connectBtn = new Button(this)
         {
-            Text = "Connect",
+            Text = "Войти",
             TextSize = 11,
             Typeface = Typeface.DefaultBold
         };
@@ -875,8 +875,8 @@ public sealed class LauncherActivity : Activity
                 }
 
                 var metaSb = new System.Text.StringBuilder();
-                if (!string.IsNullOrEmpty(server.StatusData?.Map)) metaSb.Append($"Map: {server.StatusData.Map}   ");
-                if (!string.IsNullOrEmpty(server.StatusData?.Preset)) metaSb.Append($"Mode: {server.StatusData.Preset}   ");
+                if (!string.IsNullOrEmpty(server.StatusData?.Map)) metaSb.Append($"Карта: {server.StatusData.Map}   ");
+                if (!string.IsNullOrEmpty(server.StatusData?.Preset)) metaSb.Append($"Режим: {server.StatusData.Preset}   ");
                 if (metaSb.Length > 0)
                 {
                     var metaText = new TextView(this)
@@ -901,7 +901,7 @@ public sealed class LauncherActivity : Activity
                         if (string.IsNullOrEmpty(link.Url)) continue;
                         var linkBtn = new Button(this)
                         {
-                            Text = link.Name ?? link.Icon ?? "Link",
+                            Text = link.Name ?? link.Icon ?? "Ссылка",
                             TextSize = 10
                         };
                         linkBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -922,7 +922,7 @@ public sealed class LauncherActivity : Activity
             {
                 var loadingText = new TextView(this)
                 {
-                    Text = "Loading server details...",
+                    Text = "Загрузка сведений о сервере…",
                     TextSize = 11
                 };
                 loadingText.SetTextColor(LauncherTheme.SubText);
@@ -979,20 +979,20 @@ public sealed class LauncherActivity : Activity
     private string FormatRoundTime(ServerStatus? status)
     {
         if (status == null) return "—";
-        if (status.RunLevel == 0) return "Lobby";
-        if (status.RunLevel == 2) return "Ending";
+        if (status.RunLevel == 0) return "Лобби";
+        if (status.RunLevel == 2) return "Завершение";
 
         if (!string.IsNullOrEmpty(status.RoundStartTime) &&
             DateTime.TryParse(status.RoundStartTime, null, System.Globalization.DateTimeStyles.RoundtripKind, out var startTime))
         {
             var elapsed = DateTime.UtcNow - startTime.ToUniversalTime();
-            if (elapsed.TotalMinutes < 0) return "0m";
+            if (elapsed.TotalMinutes < 0) return "0 мин";
             if (elapsed.TotalHours < 1)
-                return $"{Math.Max(0, (int)elapsed.TotalMinutes)}m";
-            return $"{(int)elapsed.TotalHours}h {elapsed.Minutes:D2}m";
+                return $"{Math.Max(0, (int)elapsed.TotalMinutes)} мин";
+            return $"{(int)elapsed.TotalHours} ч {elapsed.Minutes:D2} мин";
         }
 
-        return status.RunLevel == 1 ? "In-Round" : "Online";
+        return status.RunLevel == 1 ? "Идёт раунд" : "В сети";
     }
 
     private LinearLayout BuildFiltersPanel(float density)
@@ -1010,7 +1010,7 @@ public sealed class LauncherActivity : Activity
         langRow.SetPadding(0, 0, 0, (int)(6 * density));
         var langLabel = new TextView(this)
         {
-            Text = "Language:",
+            Text = "Язык:",
             TextSize = 11,
             Typeface = Typeface.DefaultBold
         };
@@ -1018,9 +1018,9 @@ public sealed class LauncherActivity : Activity
         langLabel.LayoutParameters = new LinearLayout.LayoutParams((int)(75 * density), ViewGroup.LayoutParams.WrapContent);
         langRow.AddView(langLabel);
 
-        langRow.AddView(CreateFilterChip("All", _filterLanguage == "all", density, () => { _filterLanguage = "all"; ApplyFilterChange(); }));
-        langRow.AddView(CreateFilterChip("Russian (RU)", _filterLanguage == "ru", density, () => { _filterLanguage = "ru"; ApplyFilterChange(); }));
-        langRow.AddView(CreateFilterChip("English (EN)", _filterLanguage == "en", density, () => { _filterLanguage = "en"; ApplyFilterChange(); }));
+        langRow.AddView(CreateFilterChip("Все", _filterLanguage == "all", density, () => { _filterLanguage = "all"; ApplyFilterChange(); }));
+        langRow.AddView(CreateFilterChip("Русский", _filterLanguage == "ru", density, () => { _filterLanguage = "ru"; ApplyFilterChange(); }));
+        langRow.AddView(CreateFilterChip("Английский", _filterLanguage == "en", density, () => { _filterLanguage = "en"; ApplyFilterChange(); }));
         panel.AddView(langRow);
 
         // Region row
@@ -1028,7 +1028,7 @@ public sealed class LauncherActivity : Activity
         regRow.SetPadding(0, 0, 0, (int)(6 * density));
         var regLabel = new TextView(this)
         {
-            Text = "Region:",
+            Text = "Регион:",
             TextSize = 11,
             Typeface = Typeface.DefaultBold
         };
@@ -1036,16 +1036,16 @@ public sealed class LauncherActivity : Activity
         regLabel.LayoutParameters = new LinearLayout.LayoutParams((int)(75 * density), ViewGroup.LayoutParams.WrapContent);
         regRow.AddView(regLabel);
 
-        regRow.AddView(CreateFilterChip("All", _filterRegion == "all", density, () => { _filterRegion = "all"; ApplyFilterChange(); }));
-        regRow.AddView(CreateFilterChip("Europe / RU", _filterRegion == "eu", density, () => { _filterRegion = "eu"; ApplyFilterChange(); }));
-        regRow.AddView(CreateFilterChip("North America", _filterRegion == "na", density, () => { _filterRegion = "na"; ApplyFilterChange(); }));
+        regRow.AddView(CreateFilterChip("Все", _filterRegion == "all", density, () => { _filterRegion = "all"; ApplyFilterChange(); }));
+        regRow.AddView(CreateFilterChip("Европа / РФ", _filterRegion == "eu", density, () => { _filterRegion = "eu"; ApplyFilterChange(); }));
+        regRow.AddView(CreateFilterChip("Сев. Америка", _filterRegion == "na", density, () => { _filterRegion = "na"; ApplyFilterChange(); }));
         panel.AddView(regRow);
 
         // Options row (Hide empty, Hide full, Reset)
         var optRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         var optLabel = new TextView(this)
         {
-            Text = "Players:",
+            Text = "Игроки:",
             TextSize = 11,
             Typeface = Typeface.DefaultBold
         };
@@ -1053,9 +1053,9 @@ public sealed class LauncherActivity : Activity
         optLabel.LayoutParameters = new LinearLayout.LayoutParams((int)(75 * density), ViewGroup.LayoutParams.WrapContent);
         optRow.AddView(optLabel);
 
-        optRow.AddView(CreateFilterChip("Hide Empty", _filterHideEmpty, density, () => { _filterHideEmpty = !_filterHideEmpty; ApplyFilterChange(); }));
-        optRow.AddView(CreateFilterChip("Hide Full", _filterHideFull, density, () => { _filterHideFull = !_filterHideFull; ApplyFilterChange(); }));
-        optRow.AddView(CreateFilterChip("Reset All", false, density, () =>
+        optRow.AddView(CreateFilterChip("Без пустых", _filterHideEmpty, density, () => { _filterHideEmpty = !_filterHideEmpty; ApplyFilterChange(); }));
+        optRow.AddView(CreateFilterChip("Без полных", _filterHideFull, density, () => { _filterHideFull = !_filterHideFull; ApplyFilterChange(); }));
+        optRow.AddView(CreateFilterChip("Сбросить", false, density, () =>
         {
             _filterLanguage = "all";
             _filterRegion = "all";
@@ -1129,7 +1129,7 @@ public sealed class LauncherActivity : Activity
 
         var label = new TextView(this)
         {
-            Text = "Direct Server Address (ss14:// or host:port):",
+            Text = "Адрес сервера (ss14:// или адрес:порт):",
             TextSize = 12
         };
         label.SetTextColor(LauncherTheme.SubText);
@@ -1149,7 +1149,7 @@ public sealed class LauncherActivity : Activity
 
         var connectBtn = new Button(this)
         {
-            Text = "Connect to Server",
+            Text = "Подключиться",
             TextSize = 13,
             Typeface = Typeface.DefaultBold
         };
@@ -1186,10 +1186,10 @@ public sealed class LauncherActivity : Activity
     {
         return runLevel switch
         {
-            0 => "Lobby",
-            1 => "In-Round",
+            0 => "Лобби",
+            1 => "Идёт раунд",
             2 => "Post-Round",
-            _ => "Online"
+            _ => "В сети"
         };
     }
 
@@ -1222,7 +1222,7 @@ public sealed class LauncherActivity : Activity
 
         var title = new TextView(this)
         {
-            Text = "Space Station 14 Account",
+            Text = "Учётная запись SS14",
             TextSize = 16,
             Typeface = Typeface.DefaultBold
         };
@@ -1235,7 +1235,7 @@ public sealed class LauncherActivity : Activity
         {
             var userText = new TextView(this)
             {
-                Text = $"Active Account: {current.Username}\nUser ID: {current.UserId}",
+                Text = $"Аккаунт: {current.Username}\nID пользователя: {current.UserId}",
                 TextSize = 13
             };
             userText.SetTextColor(Color.ParseColor("#86efac"));
@@ -1243,7 +1243,7 @@ public sealed class LauncherActivity : Activity
 
             var switchGuestBtn = new Button(this)
             {
-                Text = "Play as Guest"
+                Text = "Играть гостем"
             };
             switchGuestBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
             switchGuestBtn.SetTextColor(LauncherTheme.Foreground);
@@ -1256,13 +1256,13 @@ public sealed class LauncherActivity : Activity
                 _storage.Data.ActiveUserId = null;
                 _storage.Save();
                 UpdateAccountButton();
-                Toast.MakeText(this, "Switched to Guest mode", ToastLength.Short)?.Show();
+                Toast.MakeText(this, "Включён гостевой режим", ToastLength.Short)?.Show();
             };
             view.AddView(switchGuestBtn);
 
             var logoutBtn = new Button(this)
             {
-                Text = "Log Out"
+                Text = "Выйти из аккаунта"
             };
             logoutBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
             logoutBtn.SetTextColor(Color.ParseColor("#ef4444"));
@@ -1276,7 +1276,7 @@ public sealed class LauncherActivity : Activity
                 _storage.RemoveAccount(current.UserId);
                 try { File.Delete(Path.Combine(FilesDir?.AbsolutePath ?? "", "auth.json")); } catch {}
                 UpdateAccountButton();
-                Toast.MakeText(this, "Logged out", ToastLength.Short)?.Show();
+                Toast.MakeText(this, "Вы вышли из аккаунта", ToastLength.Short)?.Show();
             };
             view.AddView(logoutBtn);
         }
@@ -1284,7 +1284,7 @@ public sealed class LauncherActivity : Activity
         {
             var uInput = new EditText(this)
             {
-                Hint = "Username or Email",
+                Hint = "Имя пользователя или почта",
                 TextSize = 13,
                 InputType = global::Android.Text.InputTypes.ClassText | global::Android.Text.InputTypes.TextVariationEmailAddress,
                 ImeOptions = (global::Android.Views.InputMethods.ImeAction)global::Android.Views.InputMethods.ImeFlags.NoExtractUi | global::Android.Views.InputMethods.ImeAction.Next
@@ -1297,7 +1297,7 @@ public sealed class LauncherActivity : Activity
 
             var pInput = new EditText(this)
             {
-                Hint = "Password",
+                Hint = "Пароль",
                 TextSize = 13,
                 InputType = global::Android.Text.InputTypes.ClassText | global::Android.Text.InputTypes.TextVariationPassword,
                 ImeOptions = (global::Android.Views.InputMethods.ImeAction)global::Android.Views.InputMethods.ImeFlags.NoExtractUi | global::Android.Views.InputMethods.ImeAction.Done
@@ -1323,7 +1323,7 @@ public sealed class LauncherActivity : Activity
 
             var loginBtn = new Button(this)
             {
-                Text = "Log In",
+                Text = "Войти",
                 TextSize = 13,
                 Typeface = Typeface.DefaultBold
             };
@@ -1348,11 +1348,11 @@ public sealed class LauncherActivity : Activity
                     }
                     catch {}
                     UpdateAccountButton();
-                    Toast.MakeText(this, $"Logged in as {res.Account.Username}", ToastLength.Short)?.Show();
+                    Toast.MakeText(this, $"Вход выполнен: {res.Account.Username}", ToastLength.Short)?.Show();
                 }
                 else
                 {
-                    Toast.MakeText(this, $"Error: {res.ErrorMessage}", ToastLength.Long)?.Show();
+                    Toast.MakeText(this, $"Ошибка: {res.ErrorMessage}", ToastLength.Long)?.Show();
                 }
             };
             view.AddView(loginBtn);
@@ -1369,7 +1369,7 @@ public sealed class LauncherActivity : Activity
 
             var regBtn = new Button(this)
             {
-                Text = "Register SS14 Account (Web)"
+                Text = "Регистрация SS14 (в браузере)"
             };
             regBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
             regBtn.SetTextColor(LauncherTheme.Foreground);
@@ -1382,7 +1382,7 @@ public sealed class LauncherActivity : Activity
 
             var guestLabel = new TextView(this)
             {
-                Text = "─── Or Play as Guest ───",
+                Text = "─── Или играть гостем ───",
                 TextSize = 11
             };
             guestLabel.SetTextColor(LauncherTheme.SubText);
@@ -1392,7 +1392,7 @@ public sealed class LauncherActivity : Activity
             var guestInput = new EditText(this)
             {
                 Text = _storage.Data.GuestUsername,
-                Hint = "Guest Player Name",
+                Hint = "Имя гостя",
                 TextSize = 13,
                 InputType = global::Android.Text.InputTypes.ClassText,
                 ImeOptions = (global::Android.Views.InputMethods.ImeAction)global::Android.Views.InputMethods.ImeFlags.NoExtractUi | global::Android.Views.InputMethods.ImeAction.Done
@@ -1404,7 +1404,7 @@ public sealed class LauncherActivity : Activity
 
             var guestSaveBtn = new Button(this)
             {
-                Text = "Save Guest Name"
+                Text = "Сохранить имя гостя"
             };
             guestSaveBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
             guestSaveBtn.SetTextColor(LauncherTheme.Foreground);
@@ -1417,7 +1417,7 @@ public sealed class LauncherActivity : Activity
                 HideKeyboard(guestInput);
                 _storage.SetGuestUsername(guestInput.Text ?? "AndroidPlayer");
                 UpdateAccountButton();
-                Toast.MakeText(this, "Guest name saved", ToastLength.Short)?.Show();
+                Toast.MakeText(this, "Имя гостя сохранено", ToastLength.Short)?.Show();
             };
             guestInput.EditorAction += (_, e) =>
             {
@@ -1432,7 +1432,7 @@ public sealed class LauncherActivity : Activity
         }
 
         builder.SetView(view);
-        builder.SetPositiveButton("Close", (IDialogInterfaceOnClickListener?)null);
+        builder.SetPositiveButton("Закрыть", (IDialogInterfaceOnClickListener?)null);
         builder.Show();
     }
 
@@ -1447,6 +1447,8 @@ public sealed class LauncherActivity : Activity
         public float X { get; set; }
         public float Y { get; set; }
     }
+
+    private static string RussianControlLabel(string value) => value switch { "USE" => "ПРИМ.", "INTER" => "ДЕЙСТ.", "SEC" => "ПКМ", "HAND" => "РУКА", "DROP" => "ВЫЛОЖ.", "PULL" => "ТЯНУТЬ", "EXAM" => "ОСМОТР", "BAG" => "РЮКЗАК", "THROW" => "БРОСОК", "KEYB" => "КЛАВ.", "EDIT" => "ПРАВКА", "DONE" => "ГОТОВО", "HIDE" => "СКРЫТЬ", "SHOW" => "ПОКАЗ.", _ => value };
 
     private static List<MobileButtonConfig> GetDefaultButtonConfigs() => new()
     {
@@ -1590,7 +1592,7 @@ public sealed class LauncherActivity : Activity
         var density = Resources!.DisplayMetrics!.Density;
 
         var builder = new AlertDialog.Builder(this);
-        builder.SetTitle("Settings");
+        builder.SetTitle("Настройки");
 
         var scrollView = new ScrollView(this);
         var view = new LinearLayout(this)
@@ -1602,7 +1604,7 @@ public sealed class LauncherActivity : Activity
 
         var scaleLabel = new TextView(this)
         {
-            Text = "Controls Scale:",
+            Text = "Масштаб кнопок:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1648,7 +1650,7 @@ public sealed class LauncherActivity : Activity
 
         var opacityLabel = new TextView(this)
         {
-            Text = "Controls Opacity:",
+            Text = "Непрозрачность кнопок:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1694,7 +1696,7 @@ public sealed class LauncherActivity : Activity
 
         var stickLabel = new TextView(this)
         {
-            Text = "Joystick Scale:",
+            Text = "Размер джойстика:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1743,7 +1745,7 @@ public sealed class LauncherActivity : Activity
 
         var guiLabel = new TextView(this)
         {
-            Text = "GUI Scale:",
+            Text = "Масштаб интерфейса:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1792,7 +1794,7 @@ public sealed class LauncherActivity : Activity
 
         var resLabel = new TextView(this)
         {
-            Text = "Display Resolution:",
+            Text = "Разрешение экрана:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1806,7 +1808,7 @@ public sealed class LauncherActivity : Activity
         var resBtnsLayout = new LinearLayout(this) { Orientation = Orientation.Horizontal };
         var resolutions = new (string text, string val)[]
         {
-            ("Native", "native"),
+            ("Исходное", "native"),
             ("900p", "900p"),
             ("720p", "720p")
         };
@@ -1839,7 +1841,7 @@ public sealed class LauncherActivity : Activity
 
         var listHeader = new TextView(this)
         {
-            Text = "Button Customization:",
+            Text = "Настройка кнопок:",
             TextSize = 13,
             Typeface = global::Android.Graphics.Typeface.DefaultBold
         };
@@ -1875,7 +1877,7 @@ public sealed class LauncherActivity : Activity
 
                 var title = new TextView(this)
                 {
-                    Text = b.Label + (b.IsDeleted ? " (Hidden)" : ""),
+                    Text = (b.IsCustom ? b.Label : RussianControlLabel(b.Label)) + (b.IsDeleted ? " (скрыта)" : ""),
                     TextSize = 12,
                     Typeface = global::Android.Graphics.Typeface.DefaultBold
                 };
@@ -1884,7 +1886,7 @@ public sealed class LauncherActivity : Activity
 
                 var subtitle = new TextView(this)
                 {
-                    Text = $"Key: {b.Key} | Size: {b.Size:F0}px" + (b.IsCustom ? " | Custom" : ""),
+                    Text = $"Клавиша: {b.Key} | Размер: {b.Size:F0} пкс" + (b.IsCustom ? " | своя" : ""),
                     TextSize = 10
                 };
                 subtitle.SetTextColor(LauncherTheme.SubText);
@@ -1895,7 +1897,7 @@ public sealed class LauncherActivity : Activity
 
                 var editBtn = new Button(this)
                 {
-                    Text = "Edit",
+                    Text = "Изменить",
                     TextSize = 10
                 };
                 editBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3);
@@ -1915,7 +1917,7 @@ public sealed class LauncherActivity : Activity
 
                 var toggleBtn = new Button(this)
                 {
-                    Text = curBtn.IsDeleted ? "Show" : (curBtn.IsCustom ? "Del" : "Hide"),
+                    Text = curBtn.IsDeleted ? "Показать" : (curBtn.IsCustom ? "Удалить" : "Скрыть"),
                     TextSize = 10
                 };
                 toggleBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -1945,7 +1947,7 @@ public sealed class LauncherActivity : Activity
 
         var addBtn = new Button(this)
         {
-            Text = "+ Add Custom Button",
+            Text = "+ Добавить кнопку",
             TextSize = 12
         };
         addBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3);
@@ -1966,7 +1968,7 @@ public sealed class LauncherActivity : Activity
 
         var resetBtn = new Button(this)
         {
-            Text = "Reset All Controls to Default",
+            Text = "Сбросить управление",
             TextSize = 11
         };
         resetBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -1980,7 +1982,7 @@ public sealed class LauncherActivity : Activity
             MainActivity.LaunchBuildCVars["mobile.controls_layout"] = "";
             buttons = GetDefaultButtonConfigs();
             PopulateButtonsList();
-            Toast.MakeText(this, "Controls layout reset to default", ToastLength.Short)?.Show();
+            Toast.MakeText(this, "Управление сброшено", ToastLength.Short)?.Show();
         };
         view.AddView(resetBtn);
 
@@ -2017,7 +2019,7 @@ public sealed class LauncherActivity : Activity
         var cacheSizeBytes = ContentCacheManager.GetTotalCacheSizeBytes(this);
         var clearCacheBtn = new Button(this)
         {
-            Text = $"Clear Server Cache ({ContentCacheManager.FormatBytes(cacheSizeBytes)})",
+            Text = $"Очистить кэш ({ContentCacheManager.FormatBytes(cacheSizeBytes)})",
             TextSize = 11
         };
         clearCacheBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
@@ -2029,14 +2031,14 @@ public sealed class LauncherActivity : Activity
         {
             if (_cacheTransferBusy || ContentDownloadService.IsDownloading) return;
             var freed = ContentCacheManager.ClearAllCache(this, _storage);
-            clearCacheBtn.Text = "Clear Server Cache (0 MB)";
-            Toast.MakeText(this, $"Cleared {ContentCacheManager.FormatBytes(freed)} of server assets", ToastLength.Short)?.Show();
+            clearCacheBtn.Text = "Очистить кэш серверов (0 МБ)";
+            Toast.MakeText(this, $"Удалено файлов сервера: {ContentCacheManager.FormatBytes(freed)}", ToastLength.Short)?.Show();
         };
         view.AddView(clearCacheBtn);
 
         var infoText = new TextView(this)
         {
-            Text = "In-game: tap EDIT at the top to reposition buttons by dragging.",
+            Text = "В игре нажми «ПРАВКА» сверху, чтобы перемещать кнопки пальцем.",
             TextSize = 10
         };
         infoText.SetTextColor(LauncherTheme.SubText);
@@ -2046,7 +2048,7 @@ public sealed class LauncherActivity : Activity
         view.AddView(infoText);
 
         builder.SetView(scrollView);
-        builder.SetPositiveButton("Close", (IDialogInterfaceOnClickListener?)null);
+        builder.SetPositiveButton("Закрыть", (IDialogInterfaceOnClickListener?)null);
         builder.Show();
     }
 
@@ -2127,7 +2129,7 @@ public sealed class LauncherActivity : Activity
     {
         var density = Resources?.DisplayMetrics?.Density ?? 1.0f;
         var builder = new AlertDialog.Builder(this);
-        builder.SetTitle($"Configure: {btn.Label}");
+        builder.SetTitle($"Настройка: {btn.Label}");
 
         var view = new LinearLayout(this)
         {
@@ -2135,16 +2137,16 @@ public sealed class LauncherActivity : Activity
         };
         view.SetPadding((int)(16 * density), (int)(12 * density), (int)(16 * density), (int)(12 * density));
 
-        var nameLabel = new TextView(this) { Text = "Button Label:", TextSize = 11 };
+        var nameLabel = new TextView(this) { Text = "Подпись кнопки:", TextSize = 11 };
         nameLabel.SetTextColor(LauncherTheme.SubText);
         view.AddView(nameLabel);
 
-        var nameInput = new EditText(this) { Text = btn.Label, TextSize = 13 };
+        var nameInput = new EditText(this) { Text = btn.IsCustom ? btn.Label : RussianControlLabel(btn.Label), TextSize = 13 };
         nameInput.SetTextColor(LauncherTheme.Foreground);
         nameInput.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
         view.AddView(nameInput);
 
-        var keyLabel = new TextView(this) { Text = "Key Code (e.g. E, Space, Return, Shift):", TextSize = 11 };
+        var keyLabel = new TextView(this) { Text = "Код клавиши (например, E, Space, Return, Shift):", TextSize = 11 };
         keyLabel.SetTextColor(LauncherTheme.SubText);
         var klp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
         klp.SetMargins(0, (int)(8 * density), 0, 0);
@@ -2204,7 +2206,7 @@ public sealed class LauncherActivity : Activity
         }
         view.AddView(quickRow2);
 
-        var sizeLabel = new TextView(this) { Text = "Button Size:", TextSize = 11 };
+        var sizeLabel = new TextView(this) { Text = "Размер кнопки:", TextSize = 11 };
         sizeLabel.SetTextColor(LauncherTheme.SubText);
         var slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
         slp.SetMargins(0, (int)(8 * density), 0, 0);
@@ -2244,15 +2246,15 @@ public sealed class LauncherActivity : Activity
         view.AddView(sizeRow);
 
         builder.SetView(view);
-        builder.SetPositiveButton("Save", (_, _) =>
+        builder.SetPositiveButton("Сохранить", (_, _) =>
         {
             btn.Label = string.IsNullOrWhiteSpace(nameInput.Text) ? "BTN" : nameInput.Text.Trim();
             btn.Key = string.IsNullOrWhiteSpace(keyInput.Text) ? btn.Label : keyInput.Text.Trim();
             btn.Size = currentSize;
             onSaved();
-            Toast.MakeText(this, $"Saved button \"{btn.Label}\"", ToastLength.Short)?.Show();
+            Toast.MakeText(this, $"Кнопка \"{btn.Label}\" сохранена", ToastLength.Short)?.Show();
         });
-        builder.SetNegativeButton("Cancel", (IDialogInterfaceOnClickListener?)null);
+        builder.SetNegativeButton("Отмена", (IDialogInterfaceOnClickListener?)null);
         builder.Show();
     }
 
@@ -2260,7 +2262,7 @@ public sealed class LauncherActivity : Activity
     {
         var density = Resources?.DisplayMetrics?.Density ?? 1.0f;
         var builder = new AlertDialog.Builder(this);
-        builder.SetTitle("New Screen Button");
+        builder.SetTitle("Новая экранная кнопка");
 
         var view = new LinearLayout(this)
         {
@@ -2268,7 +2270,7 @@ public sealed class LauncherActivity : Activity
         };
         view.SetPadding((int)(16 * density), (int)(12 * density), (int)(16 * density), (int)(12 * density));
 
-        var nameLabel = new TextView(this) { Text = "Button Label (e.g. E, F, TAB):", TextSize = 11 };
+        var nameLabel = new TextView(this) { Text = "Подпись кнопки (например, E, F, TAB):", TextSize = 11 };
         nameLabel.SetTextColor(LauncherTheme.SubText);
         view.AddView(nameLabel);
 
@@ -2277,7 +2279,7 @@ public sealed class LauncherActivity : Activity
         nameInput.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
         view.AddView(nameInput);
 
-        var keyLabel = new TextView(this) { Text = "Key Code (e.g. E, Space, Return, Shift):", TextSize = 11 };
+        var keyLabel = new TextView(this) { Text = "Код клавиши (например, E, Space, Return, Shift):", TextSize = 11 };
         keyLabel.SetTextColor(LauncherTheme.SubText);
         var klp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
         klp.SetMargins(0, (int)(8 * density), 0, 0);
@@ -2290,7 +2292,7 @@ public sealed class LauncherActivity : Activity
         view.AddView(keyInput);
 
         builder.SetView(view);
-        builder.SetPositiveButton("Add", (_, _) =>
+        builder.SetPositiveButton("Добавить", (_, _) =>
         {
             var btnText = string.IsNullOrWhiteSpace(nameInput.Text) ? "BTN" : nameInput.Text.Trim();
             var btnKey = string.IsNullOrWhiteSpace(keyInput.Text) ? btnText : keyInput.Text.Trim();
@@ -2308,9 +2310,9 @@ public sealed class LauncherActivity : Activity
             };
 
             onAdded(newBtn);
-            Toast.MakeText(this, $"Button \"{btnText}\" added!", ToastLength.Short)?.Show();
+            Toast.MakeText(this, $"Кнопка \"{btnText}\" добавлена", ToastLength.Short)?.Show();
         });
-        builder.SetNegativeButton("Cancel", (IDialogInterfaceOnClickListener?)null);
+        builder.SetNegativeButton("Отмена", (IDialogInterfaceOnClickListener?)null);
         builder.Show();
     }
 
@@ -2320,14 +2322,14 @@ public sealed class LauncherActivity : Activity
         _storage.SetLastServer(address);
         _overlayBox.Visibility = ViewStates.Visible;
         _overlayProgress.Indeterminate = true;
-        _overlayText.Text = "Resolving server build info...";
+        _overlayText.Text = "Получение сведений о сборке…";
         Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
 
         try
         {
             if (!UriHelper.TryParseSs14Uri(address, out var parsedAddress))
             {
-                throw new FormatException($"Invalid server address: {address}");
+                throw new FormatException($"Некорректный адрес сервера: {address}");
             }
 
             ServerInfo? serverInfo = null;
@@ -2335,7 +2337,7 @@ public sealed class LauncherActivity : Activity
             {
                 if (attempt > 1)
                 {
-                    _overlayText.Text = "Server preparing content, retrying...";
+                    _overlayText.Text = "Сервер готовит файлы, повторяем запрос…";
                     await Task.Delay(2000);
                 }
                 serverInfo = await _hubClient.FetchServerInfoAsync(address);
@@ -2352,8 +2354,8 @@ public sealed class LauncherActivity : Activity
                 Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
                 _overlayBox.Visibility = ViewStates.Gone;
                 var errMsg = serverInfo == null
-                    ? "Failed to reach server. Please ensure the server is online and try again."
-                    : "Server did not provide build or content information.";
+                    ? "Не удалось связаться с сервером. Проверь его доступность и повтори попытку."
+                    : "Сервер не сообщил сведения о сборке или файлах.";
                 global::Android.Util.Log.Warn("SS14Launcher", errMsg);
                 Toast.MakeText(this, errMsg, ToastLength.Long)?.Show();
                 return;
@@ -2388,7 +2390,7 @@ public sealed class LauncherActivity : Activity
             {
                 ContentCacheManager.PurgeOldBuildForServer(this, _storage, parsedAddress.ToString(), targetZip);
                 Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
-                _overlayText.Text = "Launching game...";
+                _overlayText.Text = "Запуск игры…";
                 LaunchGameWithZip(targetZip, serverInfo, parsedAddress.ToString());
                 return;
             }
@@ -2397,7 +2399,7 @@ public sealed class LauncherActivity : Activity
             _pendingServerAddress = parsedAddress.ToString();
 
             _overlayProgress.Indeterminate = true;
-            _overlayText.Text = "Downloading server content (check notification)...";
+            _overlayText.Text = "Загрузка файлов сервера (см. уведомление)…";
 
             ContentDownloadService.Start(this, build, address, cacheDir);
         }
@@ -2408,7 +2410,7 @@ public sealed class LauncherActivity : Activity
             global::Android.Util.Log.Error("SS14Launcher", $"StartConnectingAsync error: {ex}");
             RunOnUiThread(() =>
             {
-                Toast.MakeText(this, $"Connection error: {ex.Message}", ToastLength.Long)?.Show();
+                Toast.MakeText(this, $"Ошибка подключения: {ex.Message}", ToastLength.Long)?.Show();
             });
         }
     }
@@ -2439,7 +2441,7 @@ public sealed class LauncherActivity : Activity
         {
             ContentCacheManager.PurgeOldBuildForServer(this, _storage, _pendingServerAddress ?? "", targetZip);
             Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
-            _overlayText.Text = "Launching game...";
+            _overlayText.Text = "Запуск игры…";
             LaunchGameWithZip(targetZip, _pendingServerInfo, _pendingServerAddress ?? "");
         });
     }
@@ -2450,7 +2452,7 @@ public sealed class LauncherActivity : Activity
         {
             Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
             _overlayBox.Visibility = ViewStates.Gone;
-            Toast.MakeText(this, $"Download failed: {error}", ToastLength.Long)?.Show();
+            Toast.MakeText(this, $"Ошибка загрузки: {error}", ToastLength.Long)?.Show();
         });
     }
 
@@ -2573,11 +2575,11 @@ public sealed class LauncherActivity : Activity
             if (!CrashReporter.HasNewCrash())
                 return;
             var builder = new AlertDialog.Builder(this);
-            builder.SetTitle("Last session crashed");
-            builder.SetMessage("The game crashed last time. You can view the crash report " +
-                "and share it with developers.\n\n" + CrashReporter.GetStatusLine());
-            builder.SetPositiveButton("View Report", (_, _) => ShowCrashReporterDialog());
-            builder.SetNegativeButton("Dismiss", (_, _) => CrashReporter.MarkSeen());
+            builder.SetTitle("Игра завершилась с ошибкой");
+            builder.SetMessage("При прошлом запуске игра завершилась с ошибкой. Можно открыть отчёт " +
+                "и отправить его разработчику порта.\n\n" + CrashReporter.GetStatusLine());
+            builder.SetPositiveButton("Открыть отчёт", (_, _) => ShowCrashReporterDialog());
+            builder.SetNegativeButton("Закрыть", (_, _) => CrashReporter.MarkSeen());
             builder.SetCancelable(true);
             RunOnUiThread(() =>
             {
@@ -2592,14 +2594,14 @@ public sealed class LauncherActivity : Activity
         var density = Resources?.DisplayMetrics?.Density ?? 1f;
         string report;
         try { report = CrashReporter.GetFullReport(); }
-        catch (Exception ex) { report = $"Failed to load report: {ex.Message}"; }
+        catch (Exception ex) { report = $"Не удалось открыть отчёт: {ex.Message}"; }
         // Keep the on-screen preview short; Share sends the fuller text.
         var preview = report.Length > 15000
             ? "[... showing tail ...]\n" + report.Substring(report.Length - 15000)
             : report;
 
         var builder = new AlertDialog.Builder(this);
-        builder.SetTitle("Crash Report");
+        builder.SetTitle("Отчёт об ошибке");
 
         var scroll = new ScrollView(this);
         var view = new LinearLayout(this) { Orientation = Orientation.Vertical };
@@ -2615,13 +2617,13 @@ public sealed class LauncherActivity : Activity
 
         var logView = new TextView(this)
         {
-            Text = string.IsNullOrWhiteSpace(preview) ? "(empty)" : preview,
+            Text = string.IsNullOrWhiteSpace(preview) ? "(пусто)" : preview,
             TextSize = 10
         };
         logView.SetTextColor(LauncherTheme.Foreground);
         logView.SetTextIsSelectable(true);
 
-        var clearBtn = new Button(this) { Text = "Clear Logs", TextSize = 11 };
+        var clearBtn = new Button(this) { Text = "Очистить журнал", TextSize = 11 };
         clearBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
         clearBtn.SetTextColor(Color.ParseColor("#ef4444"));
         clearBtn.LayoutParameters = new LinearLayout.LayoutParams(0, (int)(34 * density), 1f)
@@ -2632,11 +2634,11 @@ public sealed class LauncherActivity : Activity
         {
             ClearCrashReports();
             status.Text = CrashReporter.GetStatusLine();
-            logView.Text = "(cleared)";
+            logView.Text = "(очищено)";
         };
         btnRow.AddView(clearBtn);
 
-        var issuesBtn = new Button(this) { Text = "GitHub Issues", TextSize = 11 };
+        var issuesBtn = new Button(this) { Text = "Ошибки на GitHub", TextSize = 11 };
         issuesBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
         issuesBtn.SetTextColor(LauncherTheme.Foreground);
         issuesBtn.LayoutParameters = new LinearLayout.LayoutParams(0, (int)(34 * density), 1f);
@@ -2648,9 +2650,9 @@ public sealed class LauncherActivity : Activity
         scroll.AddView(view);
         builder.SetView(scroll);
 
-        builder.SetPositiveButton("Share", (_, _) => ShareCrashReport());
-        builder.SetNeutralButton("Copy", (_, _) => CopyCrashReport());
-        builder.SetNegativeButton("Close", (_, _) => CrashReporter.MarkSeen());
+        builder.SetPositiveButton("Поделиться", (_, _) => ShareCrashReport());
+        builder.SetNeutralButton("Копировать", (_, _) => CopyCrashReport());
+        builder.SetNegativeButton("Закрыть", (_, _) => CrashReporter.MarkSeen());
         var dialog = builder.Create();
 
         dialog.Show();
@@ -2664,13 +2666,13 @@ public sealed class LauncherActivity : Activity
             var report = CrashReporter.GetFullReport();
             var intent = new Intent(Intent.ActionSend);
             intent.SetType("text/plain");
-            intent.PutExtra(Intent.ExtraSubject, $"SS14 Android crash report {GetCurrentAppVersion()}");
+            intent.PutExtra(Intent.ExtraSubject, $"Отчёт об ошибке SS14 Android {GetCurrentAppVersion()}");
             intent.PutExtra(Intent.ExtraText, report);
-            StartActivity(Intent.CreateChooser(intent, "Share crash report"));
+            StartActivity(Intent.CreateChooser(intent, "Отправить отчёт"));
         }
         catch (Exception ex)
         {
-            Toast.MakeText(this, $"Share failed: {ex.Message}", ToastLength.Short)?.Show();
+            Toast.MakeText(this, $"Не удалось отправить: {ex.Message}", ToastLength.Short)?.Show();
         }
     }
 
@@ -2682,11 +2684,11 @@ public sealed class LauncherActivity : Activity
             var clipboard = GetSystemService(ClipboardService) as ClipboardManager;
             if (clipboard != null)
                 clipboard.PrimaryClip = ClipData.NewPlainText("SS14 crash report", report);
-            Toast.MakeText(this, "Crash report copied to clipboard", ToastLength.Short)?.Show();
+            Toast.MakeText(this, "Отчёт скопирован", ToastLength.Short)?.Show();
         }
         catch (Exception ex)
         {
-            Toast.MakeText(this, $"Copy failed: {ex.Message}", ToastLength.Short)?.Show();
+            Toast.MakeText(this, $"Не удалось скопировать: {ex.Message}", ToastLength.Short)?.Show();
         }
     }
 
@@ -2695,7 +2697,7 @@ public sealed class LauncherActivity : Activity
         try
         {
             CrashReporter.Clear();
-            Toast.MakeText(this, "Crash reports cleared", ToastLength.Short)?.Show();
+            Toast.MakeText(this, "Отчёты удалены", ToastLength.Short)?.Show();
         }
         catch { }
     }
@@ -2704,7 +2706,7 @@ public sealed class LauncherActivity : Activity
 
     private void LaunchOfflineSandbox()
     {
-        Toast.MakeText(this, "Эта сборка загружает ресурсы с Фобоса. Выберите сервер и нажмите CONNECT.", ToastLength.Long)?.Show();
+        Toast.MakeText(this, "Эта сборка загружает ресурсы с Фобоса. Выберите сервер и нажмите «ВОЙТИ».", ToastLength.Long)?.Show();
     }
 
     private void OpenUrl(string url)
@@ -2717,7 +2719,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "Фобос 276 · 0.1.8";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.9";
 
     public string GetCurrentAppVersion()
     {
@@ -2760,23 +2762,23 @@ public sealed class LauncherActivity : Activity
             content.AddView(text);
         }
 
-        AddSection("Как выбрать предмет из кучи — SEC", "SEC = правая кнопка мыши (ПКМ), а не клавиша на клавиатуре.\n1. Нажми SEC и отпусти: кнопка включится.\n2. Коснись нужного места на игровом поле — это касание станет правым кликом и должно открыть список объектов.\n3. Выбирай предмет в списке обычным касанием.\nПосле касания игрового поля SEC выключается. Повторное нажатие SEC до выбора отменяет режим. Касания кнопок интерфейса его не расходуют.\nПеред этим выключи ALT, EXAM и PULL, если они подсвечены: модификаторы меняют действие клика.");
+        AddSection("Как выбрать предмет из кучи — ПКМ", "ПКМ = правая кнопка мыши (ПКМ), а не клавиша на клавиатуре.\n1. Нажми ПКМ и отпусти: кнопка включится.\n2. Коснись нужного места на игровом поле — это касание станет правым кликом и должно открыть список объектов.\n3. Выбирай предмет в списке обычным касанием.\nПосле касания игрового поля ПКМ выключается. Повторное нажатие ПКМ до выбора отменяет режим. Касания кнопок интерфейса его не расходуют.\nПеред этим выключи ALT, ОСМОТР и ТЯНУТЬ, если они подсвечены: модификаторы меняют действие клика.");
         AddSection("Касание и движение", "Касание игрового поля = левая кнопка мыши (ЛКМ): взаимодействие с объектом, подбор предмета или применение предмета в руке.\nДжойстик = W / A / S / D: движение.");
-        AddSection("USE — Z", "Активировать предмет в активной руке. Это не обычный клик по предмету на полу.");
-        AddSection("INTER — E", "Активировать объект в мире под указателем. Действие зависит от объекта; например, открытие контейнера. Указатель находится в месте последнего касания игрового поля.");
-        AddSection("HAND — X", "Сменить активную руку.");
-        AddSection("DROP — Q", "Положить предмет из активной руки на пол.");
-        AddSection("BAG — V", "Открыть надетый рюкзак.");
-        AddSection("THROW — Ctrl + Q", "Бросить предмет из активной руки в сторону указателя. Направление задаёт положение указателя на игровом поле.");
-        AddSection("EXAM — Shift", "Включить Shift, затем коснуться объекта: Shift + ЛКМ — осмотреть. Удерживаемый Shift также меняет другие клавиши и включает ходьбу. Если кнопка остаётся подсвеченной, нажми её повторно для выключения.");
-        AddSection("PULL — Ctrl", "Включить Ctrl, затем коснуться объекта: Ctrl + ЛКМ — начать тянуть / переключить тягу. Если кнопка остаётся подсвеченной, нажми её повторно для выключения. На ПК H — отпустить перетаскиваемый объект; такую кнопку можно добавить через EDIT.");
+        AddSection("ПРИМ. — Z", "Активировать предмет в активной руке. Это не обычный клик по предмету на полу.");
+        AddSection("ДЕЙСТ. — E", "Активировать объект в мире под указателем. Действие зависит от объекта; например, открытие контейнера. Указатель находится в месте последнего касания игрового поля.");
+        AddSection("РУКА — X", "Сменить активную руку.");
+        AddSection("ВЫЛОЖ. — Q", "Положить предмет из активной руки на пол.");
+        AddSection("РЮКЗАК — V", "Открыть надетый рюкзак.");
+        AddSection("БРОСОК — Ctrl + Q", "Бросить предмет из активной руки в сторону указателя. Направление задаёт положение указателя на игровом поле.");
+        AddSection("ОСМОТР — Shift", "Включить Shift, затем коснуться объекта: Shift + ЛКМ — осмотреть. Удерживаемый Shift также меняет другие клавиши и включает ходьбу. Если кнопка остаётся подсвеченной, нажми её повторно для выключения.");
+        AddSection("ТЯНУТЬ — Ctrl", "Включить Ctrl, затем коснуться объекта: Ctrl + ЛКМ — начать тянуть / переключить тягу. Если кнопка остаётся подсвеченной, нажми её повторно для выключения. На ПК H — отпустить перетаскиваемый объект; такую кнопку можно добавить через ПРАВКА.");
         AddSection("ALT — Alt", "Включить Alt, затем коснуться объекта: Alt + ЛКМ — альтернативное взаимодействие. Нажми ALT повторно, чтобы выключить. Alt + Z — альтернативная активация предмета в руке.");
         AddSection("ESC — Escape", "Закрыть открытое окно или отменить действие — в зависимости от текущего интерфейса. Отдельная клавиша меню игры на ПК — F10.");
-        AddSection("KEYB — экранная клавиатура", "Показать или скрыть клавиатуру телефона. Для ввода сначала выбери текстовое поле. На ПК T переводит фокус в чат; кнопку T можно добавить через EDIT.");
-        AddSection("EDIT — настройка кнопок", "Включить редактирование сенсорного управления: перемещать кнопки, менять их размер и назначение, добавлять свои клавиши. Нажми DONE (на месте EDIT), чтобы сохранить раскладку и закончить редактирование. После переназначения кнопок эта справка описывает только исходную раскладку.");
-        AddSection("HIDE — скрыть управление", "HIDE скрывает основные сенсорные кнопки. Для возврата нажми SHOW — эта надпись появится на той же кнопке.");
-        AddSection("Приближение — − / масштаб / +", "Кнопки по центру сверху, ниже HIDE: + приближает картинку, − отдаляет, нажатие на значение масштаба возвращает 1×. Диапазон 1×–3×. Приближение помогает точнее попадать по мелким объектам.");
-        AddSection("Другие полезные клавиши ПК", "I — инвентарь; G — создание предметов; U — меню персонажа; R — поворот объекта; H — отпустить перетаскиваемый объект; F10 — меню игры.\nИх можно назначить дополнительным кнопкам через EDIT. Справка соответствует стандартной раскладке Фобоса; изменённые игровые привязки и контекст (например, управление шаттлом) могут менять действия.");
+        AddSection("КЛАВ. — экранная клавиатура", "Показать или скрыть клавиатуру телефона. Для ввода сначала выбери текстовое поле. На ПК T переводит фокус в чат; кнопку T можно добавить через ПРАВКА.");
+        AddSection("ПРАВКА — настройка кнопок", "Включить редактирование сенсорного управления: перемещать кнопки, менять их размер и назначение, добавлять свои клавиши. Нажми ГОТОВО (на месте ПРАВКА), чтобы сохранить раскладку и закончить редактирование. После переназначения кнопок эта справка описывает только исходную раскладку.");
+        AddSection("СКРЫТЬ — скрыть управление", "СКРЫТЬ скрывает основные сенсорные кнопки. Для возврата нажми ПОКАЗ. — эта надпись появится на той же кнопке.");
+        AddSection("Приближение — − / масштаб / +", "Кнопки по центру сверху, ниже СКРЫТЬ: + приближает картинку, − отдаляет, нажатие на значение масштаба возвращает 1×. Диапазон 1×–3×. Приближение помогает точнее попадать по мелким объектам.");
+        AddSection("Другие полезные клавиши ПК", "I — инвентарь; G — создание предметов; U — меню персонажа; R — поворот объекта; H — отпустить перетаскиваемый объект; F10 — меню игры.\nИх можно назначить дополнительным кнопкам через ПРАВКА. Справка соответствует стандартной раскладке Фобоса; изменённые игровые привязки и контекст (например, управление шаттлом) могут менять действия.");
 
         var builder = new AlertDialog.Builder(this);
         builder.SetTitle("Помощь — управление Фобосом");

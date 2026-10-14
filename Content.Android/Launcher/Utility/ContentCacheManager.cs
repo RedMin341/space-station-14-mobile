@@ -51,9 +51,9 @@ public static class ContentCacheManager
 
     public static string FormatBytes(long bytes)
     {
-        if (bytes <= 0) return "0 MB";
+        if (bytes <= 0) return "0 МБ";
         double mb = bytes / (1024.0 * 1024.0);
-        return $"{mb:F1} MB";
+        return $"{mb:F1} МБ";
     }
 
     // [SolomonNumb1] deletes previous server zip when a new content build is downloaded

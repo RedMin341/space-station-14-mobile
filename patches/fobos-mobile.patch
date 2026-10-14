@@ -1736,7 +1736,7 @@ index 0000000..f1651ce
 +    private readonly PanelContainer _dialogPanel = new();
 +    private readonly Label _dialogTitle = new()
 +    {
-+        Text = "BUTTON SETTINGS",
++        Text = "НАСТРОЙКА КНОПКИ",
 +        FontColorOverride = new Color(255, 215, 0),
 +        HorizontalAlignment = HAlignment.Center
 +    };
@@ -1749,9 +1749,9 @@ index 0000000..f1651ce
 +        HorizontalAlignment = HAlignment.Center,
 +        VerticalAlignment = VAlignment.Center
 +    };
-+    private readonly Button _saveBtn = new() { Text = "SAVE" };
-+    private readonly Button _deleteBtn = new() { Text = "DELETE BUTTON" };
-+    private readonly Button _cancelBtn = new() { Text = "CANCEL" };
++    private readonly Button _saveBtn = new() { Text = "СОХРАНИТЬ" };
++    private readonly Button _deleteBtn = new() { Text = "УДАЛИТЬ КНОПКУ" };
++    private readonly Button _cancelBtn = new() { Text = "ОТМЕНА" };
 +
 +    private PojavActionButton? _currentEditingButton;
 +    private float _dialogButtonSize = 50f;
@@ -1863,29 +1863,29 @@ index 0000000..f1651ce
 +
 +        _editorBanner = new Label
 +        {
-+            Text = "EDIT CONTROLS:",
++            Text = "УПРАВЛЕНИЕ:",
 +            FontColorOverride = new Color(255, 230, 100),
 +            VerticalAlignment = VAlignment.Center
 +        };
 +        barLayout.AddChild(_editorBanner);
 +
-+        _addBtn = new Button { Text = "+ BUTTON" };
++        _addBtn = new Button { Text = "+ КНОПКА" };
 +        _addBtn.OnPressed += _ => OpenAddButtonDialog();
 +        barLayout.AddChild(_addBtn);
 +
-+        _scaleMinusBtn = new Button { Text = "SCALE -" };
++        _scaleMinusBtn = new Button { Text = "РАЗМЕР −" };
 +        _scaleMinusBtn.OnPressed += _ => AdjustScale(-0.1f);
 +        barLayout.AddChild(_scaleMinusBtn);
 +
-+        _scalePlusBtn = new Button { Text = "SCALE +" };
++        _scalePlusBtn = new Button { Text = "РАЗМЕР +" };
 +        _scalePlusBtn.OnPressed += _ => AdjustScale(0.1f);
 +        barLayout.AddChild(_scalePlusBtn);
 +
-+        _resetBtn = new Button { Text = "RESET" };
++        _resetBtn = new Button { Text = "СБРОС" };
 +        _resetBtn.OnPressed += _ => ResetToDefaultLayout();
 +        barLayout.AddChild(_resetBtn);
 +
-+        _doneBtn = new Button { Text = "DONE" };
++        _doneBtn = new Button { Text = "ГОТОВО" };
 +        _doneBtn.OnPressed += _ => ToggleEditMode();
 +        barLayout.AddChild(_doneBtn);
 +
@@ -1930,11 +1930,11 @@ index 0000000..f1651ce
 +            Orientation = BoxContainer.LayoutOrientation.Horizontal,
 +            SeparationOverride = 8
 +        };
-+        nameRow.AddChild(new Label { Text = "Button Label:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
++        nameRow.AddChild(new Label { Text = "Подпись:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
 +        nameRow.AddChild(_dialogNameInput);
 +        dialogContent.AddChild(nameRow);
 +
-+        dialogContent.AddChild(new Label { Text = "Quick Key Preset:", FontColorOverride = new Color(200, 200, 200) });
++        dialogContent.AddChild(new Label { Text = "Выбор клавиши:", FontColorOverride = new Color(200, 200, 200) });
 +        var quickRow1 = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal, SeparationOverride = 6 };
 +        string[] row1Keys = ["E", "Z", "Q", "V", "X", "R", "F", "C", "Space"];
 +        foreach (var k in row1Keys)
@@ -1962,7 +1962,7 @@ index 0000000..f1651ce
 +            Orientation = BoxContainer.LayoutOrientation.Horizontal,
 +            SeparationOverride = 8
 +        };
-+        keyRow.AddChild(new Label { Text = "Key Code:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
++        keyRow.AddChild(new Label { Text = "Код клавиши:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
 +        keyRow.AddChild(_dialogKeyInput);
 +        dialogContent.AddChild(keyRow);
 +
@@ -1971,7 +1971,7 @@ index 0000000..f1651ce
 +            Orientation = BoxContainer.LayoutOrientation.Horizontal,
 +            SeparationOverride = 8
 +        };
-+        sizeRow.AddChild(new Label { Text = "Button Size:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
++        sizeRow.AddChild(new Label { Text = "Размер:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
 +        var sizeMinus = new Button { Text = " - ", MinSize = new Vector2(36, 28) };
 +        sizeMinus.OnPressed += _ =>
 +        {
@@ -2053,7 +2053,7 @@ index 0000000..f1651ce
 +    private void OpenAddButtonDialog()
 +    {
 +        _currentEditingButton = null;
-+        _dialogTitle.Text = "ADD NEW BUTTON";
++        _dialogTitle.Text = "НОВАЯ КНОПКА";
 +        _dialogTitle.FontColorOverride = new Color(255, 215, 0);
 +
 +        _dialogNameInput.Text = "E";
@@ -2062,7 +2062,7 @@ index 0000000..f1651ce
 +        _dialogButtonSize = 52f;
 +        _sizeDisplayLabel.Text = "52 px";
 +
-+        _saveBtn.Text = "CREATE";
++        _saveBtn.Text = "СОЗДАТЬ";
 +        _deleteBtn.Visible = false;
 +
 +        _modalOverlay.Visible = true;
@@ -2071,7 +2071,7 @@ index 0000000..f1651ce
 +    private void OpenConfigureButtonDialog(PojavActionButton btn)
 +    {
 +        _currentEditingButton = btn;
-+        _dialogTitle.Text = $"BUTTON SETTINGS: {btn.Text}";
++        _dialogTitle.Text = $"НАСТРОЙКА: {btn.Text}";
 +        _dialogTitle.FontColorOverride = new Color(255, 230, 100);
 +
 +        _dialogNameInput.Text = btn.Text;
@@ -2080,7 +2080,7 @@ index 0000000..f1651ce
 +        _dialogButtonSize = btn.CustomSize ?? 50f;
 +        _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
 +
-+        _saveBtn.Text = "SAVE";
++        _saveBtn.Text = "СОХРАНИТЬ";
 +        _deleteBtn.Visible = true;
 +
 +        _modalOverlay.Visible = true;
@@ -2219,7 +2219,7 @@ index 0000000..f1651ce
 +        System.Console.WriteLine($"[MobileEdit] ToggleEditMode now={IsEditMode} buttons={_allButtons.Count}");
 +        MouseFilter = IsEditMode ? MouseFilterMode.Stop : MouseFilterMode.Ignore;
 +        _editorBarContainer.Visible = IsEditMode;
-+        _editButton.Text = IsEditMode ? "DONE" : "EDIT";
++        _editButton.Text = IsEditMode ? "ГОТОВО" : "EDIT";
 +
 +        _thumbstick.IsEditMode = IsEditMode;
 +        foreach (var btn in _allButtons)
@@ -2807,9 +2807,9 @@ index 0000000..4f00e0a
 +    public string Text
 +    {
 +        get => _label.Text ?? string.Empty;
-+        set => _label.Text = value;
++        set => _label.Text = IsCustom ? value : RussianLabel(value);
 +    }
-+
++    private static string RussianLabel(string value) => value switch { "USE" => "ПРИМ.", "INTER" => "ДЕЙСТ.", "SEC" => "ПКМ", "HAND" => "РУКА", "DROP" => "ВЫЛОЖ.", "PULL" => "ТЯНУТЬ", "EXAM" => "ОСМОТР", "BAG" => "РЮКЗАК", "THROW" => "БРОСОК", "KEYB" => "КЛАВ.", "EDIT" => "ПРАВКА", "DONE" => "ГОТОВО", "HIDE" => "СКРЫТЬ", "SHOW" => "ПОКАЗ.", _ => value };
 +    public Color AccentColor { get; set; } = new Color(210, 210, 210);
 +    public bool IsToggle { get; set; }
 +    public bool IsToggled { get; set; }
@@ -2849,7 +2849,7 @@ index 0000000..4f00e0a
 +
 +        _label = new Label
 +        {
-+            Text = text,
++            Text = isCustom ? text : RussianLabel(text),
 +            HorizontalAlignment = HAlignment.Center,
 +            VerticalAlignment = VAlignment.Center,
 +            FontColorOverride = Color.White,

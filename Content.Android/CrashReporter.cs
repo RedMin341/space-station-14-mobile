@@ -257,10 +257,10 @@ public static class CrashReporter
             var crashSize = File.Exists(CrashPath) ? new FileInfo(CrashPath).Length : 0;
             var logSize = File.Exists(GameLogPath) ? new FileInfo(GameLogPath).Length : 0;
             if (crashSize == 0 && logSize == 0)
-                return "No crash report or game log found yet.";
+                return "Отчётов об ошибках и журнала игры пока нет.";
             return $"crash.txt: {FormatBytes(crashSize)}   game.log: {FormatBytes(logSize)}";
         }
-        catch { return "Log status unavailable."; }
+        catch { return "Не удалось прочитать сведения о журнале."; }
     }
 
     /// <summary>

@@ -95,7 +95,7 @@ public sealed class AczClient
 
         var (manifestUrl, downloadUrl) = GetUrls(build, serverAddress);
 
-        progress?.Invoke(0, 0, "Fetching server manifest...");
+        progress?.Invoke(0, 0, "Получение списка файлов сервера…");
         using var manifestReq = new HttpRequestMessage(HttpMethod.Get, manifestUrl);
         manifestReq.Headers.UserAgent.ParseAdd("SS14.Launcher/61");
         using var manifestResp = await _http.SendAsync(manifestReq, HttpCompletionOption.ResponseHeadersRead, cancel);
@@ -107,7 +107,7 @@ public sealed class AczClient
         var header = await reader.ReadLineAsync(cancel);
         if (header != "Robust Content Manifest 1")
         {
-            throw new InvalidOperationException($"Invalid manifest header: {header}");
+            throw new InvalidOperationException($"Некорректный заголовок списка файлов: {header}");
         }
 
         var entries = new List<(int Index, string Path)>();
@@ -124,7 +124,7 @@ public sealed class AczClient
 
         if (entries.Count == 0)
         {
-            throw new InvalidOperationException("Manifest contains 0 entries.");
+            throw new InvalidOperationException("Список файлов сервера пуст.");
         }
 
         var finalHash = expectedHashHex ?? (build.Version?.ToUpperInvariant() ?? Guid.NewGuid().ToString("N"));
@@ -147,7 +147,7 @@ public sealed class AczClient
         dlReq.Content = new ByteArrayContent(requestBody);
         dlReq.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-        progress?.Invoke(0, entries.Count, $"Connecting to download stream ({entries.Count} files)...");
+        progress?.Invoke(0, entries.Count, $"Подключение к загрузке ({entries.Count} файлов)…");
         using var dlResp = await _http.SendAsync(dlReq, HttpCompletionOption.ResponseHeadersRead, cancel);
         dlResp.EnsureSuccessStatusCode();
 
@@ -206,7 +206,7 @@ public sealed class AczClient
                                     if (Zstd.ZSTD_isError(ret) != 0)
                                     {
                                         var err = Marshal.PtrToStringUTF8((IntPtr)Zstd.ZSTD_getErrorName(ret));
-                                        throw new InvalidOperationException($"Zstd decompress error for {entry.Path}: {err}");
+                                        throw new InvalidOperationException($"Ошибка распаковки {entry.Path}: {err}");
                                     }
                                 }
                             }
@@ -237,7 +237,7 @@ public sealed class AczClient
                     {
                         lastProgressTime = sw.ElapsedMilliseconds;
                         var pct = (int)((i + 1) * 100L / entries.Count);
-                        progress?.Invoke(i + 1, entries.Count, $"Downloading content: {pct}%\n({i + 1}/{entries.Count} files)");
+                        progress?.Invoke(i + 1, entries.Count, $"Загрузка файлов: {pct}%\n({i + 1}/{entries.Count})");
                     }
                 }
             }

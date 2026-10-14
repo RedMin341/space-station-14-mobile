@@ -16,7 +16,7 @@ public static class UriHelper
     {
         if (!TryParseSs14Uri(address, out var uri))
         {
-            throw new FormatException($"Not a valid SS14 URI: {address}");
+            throw new FormatException($"Некорректный адрес SS14: {address}");
         }
 
         return uri;
@@ -54,7 +54,7 @@ public static class UriHelper
         {
             SchemeSs14 => Uri.UriSchemeHttp,
             SchemeSs14s => Uri.UriSchemeHttps,
-            _ => throw new ArgumentException($"Wrong URI scheme: {serverAddress.Scheme}")
+            _ => throw new ArgumentException($"Неподдерживаемый протокол адреса: {serverAddress.Scheme}")
         };
 
         var builder = new UriBuilder(serverAddress)
