@@ -19,6 +19,10 @@ for rel in ['Content.Server/Content.Server.csproj', 'Content.Packaging/Content.P
             'RobustToolbox/Robust.Packaging/Robust.Packaging.csproj']:
     change(root/rel, '>Exe</OutputType>', '>Library</OutputType>')
 
+# Retain packaging APIs used by the server but exclude their desktop CLI entry points.
+for rel in ['Content.Packaging/Content.Packaging.csproj', 'RobustToolbox/Robust.Packaging/Robust.Packaging.csproj']:
+    change(root/rel, '</Project>', '<ItemGroup><Compile Remove="Program.cs" /></ItemGroup></Project>')
+
 client = engine/'Robust.Client/GameController/GameController.cs'
 change(client, '// Fobos distributes two additional modules with its server content.',
        'if (System.Environment.GetEnvironmentVariable("SS14_OFFLINE_SANDBOX") == "1")\n                    return true;\n\n                // Fobos distributes two additional modules with its server content.')
@@ -82,8 +86,11 @@ base=[{'proto':'','entities':[
 room={'meta':{'format':7,'category':'Map','engineVersion':'276.0.0','entityCount':2+len(entities)},
       'maps':[1],'grids':[2],'orphans':[],'nullspace':[],'tilemap':{0:'Space',1:'FloorSteel'},'entities':base+entities}
 proto=[{'type':'gameMap','id':'OfflineRoom','mapName':'Комната Чёрного Котика','mapPath':'/Maps/Test/offline-room.yml',
-        'minPlayers':0,'maxRandomOffset':0,'randomRotation':False,'stations':{'OfflineRoom':{'stationProto':'StandardNanotrasenStation',
+        'minPlayers':0,'maxRandomOffset':0,'randomRotation':False,'stations':{'OfflineRoom':{'stationProto':'OfflineTrainingStation',
         'components':[{'type':'StationNameSetup','mapNameTemplate':'Песочница Чёрного Котика'},{'type':'StationJobs','availableJobs':{'Passenger':[-1,-1]}}]}}}]
+proto.append({'type':'entity','id':'OfflineTrainingStation',
+              'parent':['BaseStation','BaseStationJobsSpawning','BaseStationRecords','BaseStationNanotrasen'],
+              'categories':['HideSpawnMenu'],'components':[{'type':'Transform'}]})
 with zipfile.ZipFile('Content.Android/offline.zip','w',zipfile.ZIP_DEFLATED,compresslevel=5) as z:
     for f in sorted((root/'Resources').rglob('*')):
         if not f.is_file(): continue

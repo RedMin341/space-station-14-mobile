@@ -496,6 +496,7 @@ namespace Content.Android
 
         protected override void OnCreate(Bundle? savedInstanceState)
         {
+            Content.Android.Launcher.Api.AczClient.InitNative();
             System.Environment.SetEnvironmentVariable("SS14_OFFLINE_SANDBOX", "1");
             InstallJavaCrashHandler();
             // The SDL runtime can reset orientation at startup; enforce
@@ -881,37 +882,10 @@ namespace Content.Android
                 string? userId = null;
                 string? pubKey = null;
 
-                var authPath = Path.Combine(filesDir, "auth.json");
-                if (false && File.Exists(authPath))
-                {
-                    try
-                    {
-                        var json = File.ReadAllText(authPath);
-                        using var doc = System.Text.Json.JsonDocument.Parse(json);
-                        var root = doc.RootElement;
-                        if (string.IsNullOrEmpty(username) && root.TryGetProperty("username", out var u))
-                            username = u.GetString();
-                        if (string.IsNullOrEmpty(token) && root.TryGetProperty("token", out var tok))
-                            token = tok.GetString();
-                        if (string.IsNullOrEmpty(userId) && root.TryGetProperty("userId", out var uid))
-                            userId = uid.GetString();
-                    }
-                    catch {}
-                }
-
-                if (!string.IsNullOrEmpty(token))
-                {
-                    System.Environment.SetEnvironmentVariable("ROBUST_AUTH_TOKEN", token);
-                }
-                if (!string.IsNullOrEmpty(userId))
-                {
-                    System.Environment.SetEnvironmentVariable("ROBUST_AUTH_USERID", userId);
-                }
-                if (!string.IsNullOrEmpty(pubKey))
-                {
-                    System.Environment.SetEnvironmentVariable("ROBUST_AUTH_PUBKEY", pubKey);
-                }
-                System.Environment.SetEnvironmentVariable("ROBUST_AUTH_SERVER", "https://auth.spacestation14.com/");
+                // This app connects only to its own unauthenticated loopback server.
+                System.Environment.SetEnvironmentVariable("ROBUST_AUTH_TOKEN", null);
+                System.Environment.SetEnvironmentVariable("ROBUST_AUTH_USERID", null);
+                System.Environment.SetEnvironmentVariable("ROBUST_AUTH_PUBKEY", null);
 
                 var hasZip = !string.IsNullOrEmpty(mountZip) && File.Exists(mountZip);
 
