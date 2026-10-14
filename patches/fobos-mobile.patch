@@ -1,0 +1,4052 @@
+diff --git a/MSBuild/Robust.DefineConstants.targets b/MSBuild/Robust.DefineConstants.targets
+index f67e982..46cb749 100644
+--- a/MSBuild/Robust.DefineConstants.targets
++++ b/MSBuild/Robust.DefineConstants.targets
+@@ -11,6 +11,11 @@
+         <DefineConstants>$(DefineConstants);MACOS;UNIX</DefineConstants>
+       </PropertyGroup>
+     </When>
++    <When Condition="'$(TargetOS)' == 'Android'" >
++      <PropertyGroup>
++        <DefineConstants>$(DefineConstants);LINUX;UNIX;ANDROID</DefineConstants>
++      </PropertyGroup>
++    </When>
+     <Otherwise>
+       <PropertyGroup>
+         <DefineConstants>$(DefineConstants);LINUX;UNIX;FREEDESKTOP</DefineConstants>
+diff --git a/Resources/Shaders/Internal/fov-lighting.swsl b/Resources/Shaders/Internal/fov-lighting.swsl
+index 91bd980..f42e010 100644
+--- a/Resources/Shaders/Internal/fov-lighting.swsl
++++ b/Resources/Shaders/Internal/fov-lighting.swsl
+@@ -4,21 +4,24 @@ preset raw;
+ 
+ #include "/Shaders/Internal/fov_shared.swsl"
+ 
+-const highp float g_MinVariance = 0.0;
+ uniform highp vec4 occludeColor;
+ 
+ void fragment()
+ {
+     highp float ourDist = length(worldSpaceDiff);
++    if (ourDist < 0.0001)
++    {
++        discard;
++    }
+ 
+     highp vec2 occlDist = occludeDepth(worldSpaceDiff, TEXTURE, 0.25);
+ 
+-    highp float occlusion = ChebyshevUpperBound(occlDist, ourDist);
++    highp float occlusion = clamp(ChebyshevUpperBound(occlDist, ourDist), 0.0, 1.0);
+ 
+-    if (occlusion >= 1.0)
++    if (!(occlusion < 1.0))
+     {
+         discard;
+     }
+ 
+-    COLOR = vec4(occludeColor.rgb, 1.0 - occlusion);
++    COLOR = vec4(occludeColor.rgb, clamp(1.0 - occlusion, 0.0, 1.0));
+ }
+diff --git a/Resources/Shaders/Internal/fov.swsl b/Resources/Shaders/Internal/fov.swsl
+index 2790536..de469d4 100644
+--- a/Resources/Shaders/Internal/fov.swsl
++++ b/Resources/Shaders/Internal/fov.swsl
+@@ -4,12 +4,15 @@ preset raw;
+ 
+ #include "/Shaders/Internal/fov_shared.swsl"
+ 
+-const highp float g_MinVariance = 0.0;
+ uniform highp vec4 occludeColor;
+ 
+ void fragment()
+ {
+     highp float ourDist = length(worldSpaceDiff);
++    if (ourDist < 0.0001)
++    {
++        discard;
++    }
+ 
+     highp float occlDist = occludeDepth(worldSpaceDiff, TEXTURE, 0.75).r;
+ 
+diff --git a/Resources/Shaders/Internal/light-hard.swsl b/Resources/Shaders/Internal/light-hard.swsl
+index 7998888..d9b76b7 100644
+--- a/Resources/Shaders/Internal/light-hard.swsl
++++ b/Resources/Shaders/Internal/light-hard.swsl
+@@ -3,9 +3,10 @@
+ highp float createOcclusion(highp vec2 diff)
+ {
+     highp float ourDist = length(diff);
++    if (ourDist < 0.0001) return 1.0;
+ 
+     highp vec2 occlDist = occludeDepth(diff, shadowMap, lightIndex);
+ 
+-    return smoothstep(0.1, 1.0, ChebyshevUpperBound(occlDist, ourDist));
++    return clamp(smoothstep(0.1, 1.0, ChebyshevUpperBound(occlDist, ourDist)), 0.0, 1.0);
+ }
+ 
+diff --git a/Resources/Shaders/Internal/light-soft.swsl b/Resources/Shaders/Internal/light-soft.swsl
+index 79cfaee..1aa4080 100644
+--- a/Resources/Shaders/Internal/light-soft.swsl
++++ b/Resources/Shaders/Internal/light-soft.swsl
+@@ -8,11 +8,11 @@ highp vec4 calcGaussianWeights(highp float sigma, highp vec4 offset)
+ 
+ highp float createOcclusion(highp vec2 diff)
+ {
+-    // Calculate vector perpendicular to light vector.
+-    // So we can sample it to get a decent soft shadow?
+-    highp vec2 perpendicular = normalize(cross(vec3(diff, 0.0), vec3(0.0, 0.0, 1.0)).xy) * 1.0 / 32.0;
+-
+     highp float ourDist = length(diff);
++    if (ourDist < 0.0001) return 1.0;
++
++    // Calculate vector perpendicular to light vector.
++    highp vec2 perpendicular = vec2(-diff.y, diff.x) / ourDist * (1.0 / 32.0);
+ 
+     // Sample 7 points on a line perpendicular to the light source.
+     // Depending on the closest point, we change the gaussian weights down below
+@@ -40,19 +40,13 @@ highp float createOcclusion(highp vec2 diff)
+     mindist = max(0.001, mindist);
+ 
+     // Change soft shadow size based on distance from primary occluder.
+-    highp float distRatio = (ourDist - mindist);
++    highp float distRatio = max(0.0, ourDist - mindist);
+ 
+     // Sigma can never be zero so make sure to clamp.
+-    // TODO: Scaling the dist ratio here in a more sane way might make shadows look better buuuut I'm lazy.
+-    // Shadows look pretty nice already.
+     highp float sigma = max(0.001, distRatio * 0.75);
+     highp vec4 weights = calcGaussianWeights(sigma, vec4(0.0, 1.0, 2.0, 3.0));
+ 
+-    // Calculation of gaussian weights here is broken because it doesn't add up to 1.
+-    // Fixing this is hard and if I had to guess too expensive for GPU shaders.
+-    // So instead we add up the total weights and scale the result with that,
+-    // so that we still end up with 0-1.
+-    highp float totalWeigths = weights.x + weights.y * 2.0 + weights.z * 2.0 + weights.w * 2.0;
++    highp float totalWeigths = max(0.0001, weights.x + weights.y * 2.0 + weights.z * 2.0 + weights.w * 2.0);
+ 
+     highp float occlusion = 0.0;
+ 
+@@ -65,6 +59,6 @@ highp float createOcclusion(highp vec2 diff)
+     occlusion += ChebyshevUpperBound(sample6, ourDist) * weights.w;
+     occlusion += ChebyshevUpperBound(sample7, ourDist) * weights.w;
+ 
+-    return occlusion / totalWeigths;
++    return clamp(occlusion / totalWeigths, 0.0, 1.0);
+ }
+ 
+diff --git a/Resources/Shaders/Internal/light_shared.swsl b/Resources/Shaders/Internal/light_shared.swsl
+index e101e4a..075f2a2 100644
+--- a/Resources/Shaders/Internal/light_shared.swsl
++++ b/Resources/Shaders/Internal/light_shared.swsl
+@@ -4,8 +4,6 @@ preset raw;
+ 
+ const highp float LIGHTING_HEIGHT = 1.0;
+ 
+-const highp float g_MinVariance = 0.0;
+-
+ varying highp vec2 worldPosition;
+ 
+ uniform highp vec4 lightColor;
+@@ -44,10 +42,11 @@ void fragment()
+     // Totally not hacky PCF on top of VSM.
+     highp float occlusion = lightIndex < 0.0 ? 1.0 : createOcclusion(diff);
+ 
+-    if (occlusion == 0.0)
++    if (!(occlusion > 0.0))
+     {
+         discard;
+     }
++    occlusion = clamp(occlusion, 0.0, 1.0);
+ 
+     // this implementation of light attenuation primarily adapted from
+     // https://lisyarus.github.io/blog/posts/point-light-attenuation.html
+@@ -62,6 +61,6 @@ void fragment()
+     val *= lightPower;
+     val *= mask;
+ 
+-    COLOR = vec4(lightColor.rgb, val * occlusion);
++    COLOR = vec4(lightColor.rgb, clamp(val * occlusion, 0.0, 10.0));
+ }
+ 
+diff --git a/Resources/Shaders/Internal/shadow_cast_shared.swsl b/Resources/Shaders/Internal/shadow_cast_shared.swsl
+index 6ed529f..1918ef4 100644
+--- a/Resources/Shaders/Internal/shadow_cast_shared.swsl
++++ b/Resources/Shaders/Internal/shadow_cast_shared.swsl
+@@ -1,12 +1,13 @@
+ // Shared code necessary for using depth casting like FOV and shadows.
+ 
+ const highp float PI = 3.1415926535897932384626433; // That enough digits?
++const highp float g_MinVariance = 0.0;
+ 
+ // This returns a vec2 because of VSM moments.
+ highp vec2 occludeDepth(highp vec2 rel, sampler2D shadowMap, highp float mapOffsetY)
+ {
+-    // It's a circle now, because it's faster to compute.
+-    highp float deflect = (atan(rel.y, -rel.x) / PI);
++    // Protect against rel == vec2(0.0) where atan(0,0) is undefined and returns NaN on Mali GPUs.
++    highp float deflect = (dot(rel, rel) < 0.0000001) ? 0.0 : (atan(rel.y, -rel.x) / PI);
+     highp float mapOffsetX = (deflect + 1.0) / 2.0;
+     return zClydeShadowDepthUnpack(texture2D(shadowMap, vec2(mapOffsetX, mapOffsetY)));
+ }
+@@ -14,6 +15,7 @@ highp vec2 occludeDepth(highp vec2 rel, sampler2D shadowMap, highp float mapOffs
+ bool doesOcclude(highp vec2 diff, sampler2D shadowMap, highp float mapOffsetY, highp float bias)
+ {
+     highp float ourDist = length(diff);
++    if (ourDist < 0.0001) return false;
+ 
+     return occludeDepth(diff, shadowMap, mapOffsetY).x + bias < ourDist;
+ }
+@@ -22,12 +24,13 @@ bool doesOcclude(highp vec2 diff, sampler2D shadowMap, highp float mapOffsetY, h
+ highp float ChebyshevUpperBound(highp vec2 moments, highp float t)
+ {
+     // One-tailed inequality valid if t > Moments.x
+-    highp float p = float(t <= moments.x);
++    highp float p = (t <= moments.x) ? 1.0 : 0.0;
+     // Compute variance.
+     highp float variance = moments.y - (moments.x * moments.x);
+-    variance = max(variance, g_MinVariance);
++    variance = max(variance, max(g_MinVariance, 0.0001));
+     // Compute probabilistic upper bound.
+     highp float d = t - moments.x;
+-    highp float p_max = variance / (variance + d*d);
+-    return max(p, p_max);
++    highp float p_max = clamp(variance / max(variance + d*d, 0.00001), 0.0, 1.0);
++    return clamp(max(p, p_max), 0.0, 1.0);
+ }
++
+diff --git a/Robust.Client/CommandLineArgs.cs b/Robust.Client/CommandLineArgs.cs
+index 8c6640c..c7e37dd 100644
+--- a/Robust.Client/CommandLineArgs.cs
++++ b/Robust.Client/CommandLineArgs.cs
+@@ -37,34 +37,32 @@ internal sealed class CommandLineArgs
+         var mountOptions = new MountOptions();
+         var execCommands = new List<string>();
+ 
+-        using var enumerator = args.GetEnumerator();
+-
+-        while (enumerator.MoveNext())
++        for (var i = 0; i < args.Count; i++)
+         {
+-            var arg = enumerator.Current;
++            var arg = args[i];
+             if (arg == "--connect")
+             {
+                 connect = true;
+             }
+             else if (arg == "--connect-address")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing connection address.");
+                     return false;
+                 }
+ 
+-                connectAddress = enumerator.Current;
++                connectAddress = args[i];
+             }
+             else if (arg == "--ss14-address")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing SS14 address.");
+                     return false;
+                 }
+ 
+-                ss14Address = enumerator.Current;
++                ss14Address = args[i];
+             }
+             else if (arg == "--self-contained")
+             {
+@@ -80,23 +78,23 @@ internal sealed class CommandLineArgs
+             }
+             else if (arg == "--username")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing username.");
+                     return false;
+                 }
+ 
+-                username = enumerator.Current;
++                username = args[i];
+             }
+             else if (arg == "--cvar")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing cvar value.");
+                     return false;
+                 }
+ 
+-                var cvar = enumerator.Current;
++                var cvar = args[i];
+                 DebugTools.AssertNotNull(cvar);
+                 var pos = cvar.IndexOf('=');
+ 
+@@ -110,33 +108,33 @@ internal sealed class CommandLineArgs
+             }
+             else if (arg == "--mount-zip")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing mount path");
+                     return false;
+                 }
+ 
+-                mountOptions.ZipMounts.Add(enumerator.Current);
++                mountOptions.ZipMounts.Add(args[i]);
+             }
+             else if (arg == "--mount-dir")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing mount path");
+                     return false;
+                 }
+ 
+-                mountOptions.DirMounts.Add(enumerator.Current);
++                mountOptions.DirMounts.Add(args[i]);
+             }
+             else if (arg == "--loglevel")
+             {
+-                if (!enumerator.MoveNext())
++                if (++i >= args.Count)
+                 {
+                     C.WriteLine("Missing loglevel sawmill.");
+                     return false;
+                 }
+ 
+-                var loglevel = enumerator.Current;
++                var loglevel = args[i];
+                 DebugTools.AssertNotNull(loglevel);
+                 var pos = loglevel.IndexOf('=');
+ 
+@@ -155,7 +153,13 @@ internal sealed class CommandLineArgs
+             }
+             else if (arg.StartsWith("+"))
+             {
+-                execCommands.Add(arg[1..]);
++                var cmd = arg[1..];
++                while (i + 1 < args.Count && !args[i + 1].StartsWith("+") && !args[i + 1].StartsWith("--"))
++                {
++                    i++;
++                    cmd += " " + args[i];
++                }
++                execCommands.Add(cmd);
+             }
+             else
+             {
+diff --git a/Robust.Client/ContentStart.cs b/Robust.Client/ContentStart.cs
+index 5e94723..6fa6021 100644
+--- a/Robust.Client/ContentStart.cs
++++ b/Robust.Client/ContentStart.cs
+@@ -4,11 +4,7 @@ namespace Robust.Client
+     {
+         public static void Start(string[] args)
+         {
+-#if FULL_RELEASE
+-            throw new System.InvalidOperationException("ContentStart.Start is not available on a full release.");
+-#else
+             GameController.Start(args, new GameControllerOptions(), true);
+-#endif
+         }
+ 
+         public static void StartLibrary(string[] args, GameControllerOptions options)
+diff --git a/Robust.Client/GameController/GameController.Input.cs b/Robust.Client/GameController/GameController.Input.cs
+index a6bc6a0..42ecf99 100644
+--- a/Robust.Client/GameController/GameController.Input.cs
++++ b/Robust.Client/GameController/GameController.Input.cs
+@@ -49,5 +49,10 @@ namespace Robust.Client
+                 return;
+             }
+         }
++
++        public void TouchFinger(TouchFingerEventArgs touchEvent)
++        {
++            _userInterfaceManager.TouchFinger(touchEvent);
++        }
+     }
+ }
+diff --git a/Robust.Client/GameController/GameController.IoC.cs b/Robust.Client/GameController/GameController.IoC.cs
+index 6079fa6..3e2161b 100644
+--- a/Robust.Client/GameController/GameController.IoC.cs
++++ b/Robust.Client/GameController/GameController.IoC.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.Reflection;
+ using Robust.Shared.ContentPack;
+@@ -19,14 +19,13 @@ namespace Robust.Client
+ 
+         internal static void RegisterReflection(IDependencyCollection deps)
+         {
+-            // Gets a handle to the shared and the current (client) dll.
+-            deps.Resolve<IReflectionManager>().LoadAssemblies(new List<Assembly>(2)
++            var assemblies = new List<Assembly>
+             {
+-                // Do NOT register Robust.Client.Godot.
+-                // At least not for now.
+                 AppDomain.CurrentDomain.GetAssemblyByName("Robust.Shared"),
+                 Assembly.GetExecutingAssembly()
+-            });
++            };
++
++            deps.Resolve<IReflectionManager>().LoadAssemblies(assemblies);
+         }
+     }
+ }
+diff --git a/Robust.Client/GameController/GameController.Standalone.cs b/Robust.Client/GameController/GameController.Standalone.cs
+index e899f8c..db89ebc 100644
+--- a/Robust.Client/GameController/GameController.Standalone.cs
++++ b/Robust.Client/GameController/GameController.Standalone.cs
+@@ -166,7 +166,15 @@ namespace Robust.Client
+             if (!_dontStart)
+             {
+                 DebugTools.AssertNotNull(_mainLoop);
+-                _mainLoop!.Run();
++                AppDomain.CurrentDomain.SetData("SS14_ENGINE_READY", true);
++                try
++                {
++                    _mainLoop!.Run();
++                }
++                finally
++                {
++                    AppDomain.CurrentDomain.SetData("SS14_ENGINE_READY", false);
++                }
+             }
+ 
+             CleanupGameThread();
+diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/GameController/GameController.cs
+index 14f5770..7e019b2 100644
+--- a/Robust.Client/GameController/GameController.cs
++++ b/Robust.Client/GameController/GameController.cs
+@@ -266,7 +266,14 @@ namespace Robust.Client
+ 
+             if (_configurationManager.GetCVar(CVars.SysGCCollectStart))
+             {
+-                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
++                try
++                {
++                    GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
++                }
++                catch (PlatformNotSupportedException)
++                {
++                    // LargeObjectHeapCompactionMode is not supported on Android/Mono.
++                }
+                 GC.Collect();
+             }
+ 
+@@ -335,6 +342,15 @@ namespace Robust.Client
+ 
+         private bool LoadModules()
+         {
++            if (OperatingSystem.IsAndroid() && _modLoader is BaseModLoader androidLoader)
++            {
++                // These assemblies are compiled from the exact Fobos content revision.
++                // Never combine downloaded content DLLs with the bundled Android client.
++                androidLoader.RegisterAlreadyLoadedAssembly(System.Reflection.Assembly.Load("Content.Shared"));
++                androidLoader.RegisterAlreadyLoadedAssembly(System.Reflection.Assembly.Load("Content.Client"));
++                return true;
++            }
++
+             DebugTools.Assert(_resourceManifest != null);
+ 
+             var assemblyPrefix = Options.ContentModulePrefix ?? _resourceManifest!.AssemblyPrefix ?? "Content.";
+@@ -361,6 +377,22 @@ namespace Robust.Client
+             return true;
+         }
+ 
++        private void LogDebugInit(string message)
++        {
++            if (OperatingSystem.IsAndroid())
++            {
++                try
++                {
++                    System.IO.File.AppendAllText("/data/data/io.spacestation14.android/files/debug_init.txt", message + "\n");
++                }
++                catch {}
++            }
++            else
++            {
++                _logger.Debug(message);
++            }
++        }
++
+         internal bool StartupSystemSplash(
+             GameControllerOptions options,
+             Func<ILogHandler>? logHandlerFactory,
+@@ -482,6 +514,7 @@ namespace Robust.Client
+             _clyde.KeyUp += KeyUp;
+             _clyde.KeyDown += KeyDown;
+             _clyde.MouseWheel += MouseWheel;
++            _clyde.TouchFinger += TouchFinger;
+             _clyde.CloseWindow += args =>
+             {
+                 if (args.Window == _clyde.MainWindow)
+diff --git a/Robust.Client/Graphics/Clyde/Clyde.Events.cs b/Robust.Client/Graphics/Clyde/Clyde.Events.cs
+index f5afe1b..52f56c3 100644
+--- a/Robust.Client/Graphics/Clyde/Clyde.Events.cs
++++ b/Robust.Client/Graphics/Clyde/Clyde.Events.cs
+@@ -1,4 +1,4 @@
+-﻿// Makes switching easier.
++// Makes switching easier.
+ #if EXCEPTION_TOLERANCE
+ #define EXCEPTION_TOLERANCE_LOCAL
+ using System;
+@@ -84,6 +84,9 @@ namespace Robust.Client.Graphics.Clyde
+                 case DEventInputModeChanged:
+                     RaiseInputModeChanged();
+                     break;
++                case DEventTouchFinger(var args):
++                    TouchFinger?.Invoke(args);
++                    break;
+             }
+         }
+ 
+@@ -160,9 +163,16 @@ namespace Robust.Client.Graphics.Clyde
+             _eventDispatchQueue.Enqueue(new DEventInputModeChanged());
+         }
+ 
++        private void SendTouchFinger(TouchFingerEventArgs ev)
++        {
++            _eventDispatchQueue.Enqueue(new DEventTouchFinger(ev));
++        }
++
+         // D stands for Dispatch
+         private abstract record DEventBase;
+ 
++        private sealed record DEventTouchFinger(TouchFingerEventArgs Args) : DEventBase;
++
+         private sealed record DEventKeyUp(KeyEventArgs Args) : DEventBase;
+ 
+         private sealed record DEventKeyDown(KeyEventArgs Args) : DEventBase;
+diff --git a/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs b/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs
+index cbc2da3..1057f16 100644
+--- a/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs
++++ b/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs
+@@ -33,7 +33,7 @@ namespace Robust.Client.Graphics.Clyde
+ 
+         // Horizontal width, in pixels, of the shadow maps used to render FOV.
+         // I figured this was more accuracy sensitive than lights so resolution is significantly higher.
+-        private const int FovMapSize = 2048;
++        private static int FovMapSize => OperatingSystem.IsAndroid() ? 512 : 2048;
+ 
+         private ClydeShaderInstance _fovDebugShaderInstance = default!;
+ 
+@@ -197,9 +197,19 @@ namespace Robust.Client.Graphics.Clyde
+ 
+             ClydeHandle LoadShaderHandle(string path)
+             {
+-                if (_resourceCache.TryGetResource(path, out ShaderSourceResource? resource))
++                try
+                 {
+-                    return resource.ClydeHandle;
++                    if (_resourceCache.TryGetResource(path, out ShaderSourceResource? resource))
++                    {
++                        var handle = resource.ClydeHandle;
++                        System.Console.WriteLine($"[ClydeLighting] Shader '{path}' loaded successfully! Handle={handle}, InLoadedShaders={_loadedShaders.ContainsKey(handle)}");
++                        return handle;
++                    }
++                    System.Console.WriteLine($"[ClydeLighting] TryGetResource returned false for '{path}'");
++                }
++                catch (Exception ex)
++                {
++                    System.Console.WriteLine($"[ClydeLighting] Exception in LoadShaderHandle for '{path}': {ex}");
+                 }
+ 
+                 _clydeSawmill.Warning($"Can't load shader {path}\n");
+@@ -298,15 +308,30 @@ namespace Robust.Client.Graphics.Clyde
+             CheckGlError();
+             if (_hasGLFloatFramebuffers)
+             {
+-                GL.ClearColor(arbitraryDistanceMax, arbitraryDistanceMax * arbitraryDistanceMax, 0, 1);
++                if (_isGLES)
++                {
++                    Span<float> clearColor = [arbitraryDistanceMax, arbitraryDistanceMax * arbitraryDistanceMax, 0f, 1f];
++                    unsafe
++                    {
++                        fixed (float* ptr = clearColor)
++                        {
++                            GL.ClearBuffer(ClearBuffer.Color, 0, ptr);
++                        }
++                    }
++                    GL.Clear(ClearBufferMask.DepthBufferBit);
++                }
++                else
++                {
++                    GL.ClearColor(arbitraryDistanceMax, arbitraryDistanceMax * arbitraryDistanceMax, 0, 1);
++                    GL.Clear(ClearBufferMask.DepthBufferBit | ClearBufferMask.ColorBufferBit);
++                }
+             }
+             else
+             {
+                 GL.ClearColor(1, 1, 1, 1);
++                GL.Clear(ClearBufferMask.DepthBufferBit | ClearBufferMask.ColorBufferBit);
+             }
+ 
+-            CheckGlError();
+-            GL.Clear(ClearBufferMask.DepthBufferBit | ClearBufferMask.ColorBufferBit);
+             CheckGlError();
+ 
+             BindVertexArray(_occlusionVao.Handle);
+@@ -430,8 +455,22 @@ namespace Robust.Client.Graphics.Clyde
+ 
+             ApplyLightingFovToBuffer(viewport, eye);
+ 
+-            var lightShader = _loadedShaders[_enableSoftShadows ? _lightSoftShaderHandle : _lightHardShaderHandle]
+-                .Program;
++            var targetHandle = _enableSoftShadows ? _lightSoftShaderHandle : _lightHardShaderHandle;
++            if (targetHandle == default || !_loadedShaders.TryGetValue(targetHandle, out var loadedLight))
++            {
++                targetHandle = _enableSoftShadows ? _lightHardShaderHandle : _lightSoftShaderHandle;
++                if (targetHandle == default || !_loadedShaders.TryGetValue(targetHandle, out loadedLight))
++                {
++                    System.Console.WriteLine($"[ClydeLighting] FAILED to find light shader! _enableSoftShadows={_enableSoftShadows}, softHandle={_lightSoftShaderHandle}, hardHandle={_lightHardShaderHandle}, loadedShadersCount={_loadedShaders.Count}");
++                    ResetBlendFunc();
++                    IsStencilling = false;
++                    BindRenderTargetFull(viewport.RenderTarget);
++                    GL.Viewport(0, 0, viewport.Size.X, viewport.Size.Y);
++                    _lightingReady = false;
++                    return;
++                }
++            }
++            var lightShader = loadedLight.Program;
+             lightShader.Use();
+ 
+             SetupGlobalUniformsImmediate(lightShader, ShadowTexture);
+@@ -549,14 +588,17 @@ namespace Robust.Client.Graphics.Clyde
+             if (_cfg.GetCVar(CVars.LightBlur))
+                 BlurRenderTarget(viewport, viewport.LightRenderTarget, viewport.LightBlurTarget, eye, 14f);
+ 
+-            using (_prof.Group("BlurOntoWalls"))
++            if (_cfg.GetCVar(CVars.LightWallBleed))
+             {
+-                BlurOntoWalls(viewport, eye);
+-            }
++                using (_prof.Group("BlurOntoWalls"))
++                {
++                    BlurOntoWalls(viewport, eye);
++                }
+ 
+-            using (_prof.Group("MergeWallLayer"))
+-            {
+-                MergeWallLayer(viewport);
++                using (_prof.Group("MergeWallLayer"))
++                {
++                    MergeWallLayer(viewport);
++                }
+             }
+ 
+             BindRenderTargetFull(viewport.RenderTarget);
+@@ -754,7 +796,10 @@ namespace Robust.Client.Graphics.Clyde
+             CalcScreenMatrices(viewport.Size, out var proj, out var view);
+             SetProjViewBuffer(proj, view);
+ 
+-            var shader = _loadedShaders[_wallBleedBlurShaderHandle].Program;
++            if (_wallBleedBlurShaderHandle == default || !_loadedShaders.TryGetValue(_wallBleedBlurShaderHandle, out var loadedWallBleed))
++                return;
++
++            var shader = loadedWallBleed.Program;
+             shader.Use();
+ 
+             SetupGlobalUniformsImmediate(shader, viewport.LightRenderTarget.Texture);
+@@ -815,7 +860,10 @@ namespace Robust.Client.Graphics.Clyde
+             CheckGlError();
+             IsBlending = false;
+ 
+-            var shader = _loadedShaders[_mergeWallLayerShaderHandle].Program;
++            if (_mergeWallLayerShaderHandle == default || !_loadedShaders.TryGetValue(_mergeWallLayerShaderHandle, out var loadedMerge))
++                return;
++
++            var shader = loadedMerge.Program;
+             shader.Use();
+ 
+             var tex = viewport.WallBleedIntermediateRenderTarget2.Texture;
+@@ -847,7 +895,13 @@ namespace Robust.Client.Graphics.Clyde
+ 
+             // Applies FOV to the final framebuffer.
+ 
+-            var fovShader = _loadedShaders[_fovShaderHandle].Program;
++            if (_fovShaderHandle == default || !_loadedShaders.TryGetValue(_fovShaderHandle, out var loadedFov))
++            {
++                System.Console.WriteLine($"[ClydeLighting] ApplyFovToBuffer: fovHandle={_fovShaderHandle}, inLoaded={_loadedShaders.ContainsKey(_fovShaderHandle)} -> RETURNING!");
++                return;
++            }
++
++            var fovShader = loadedFov.Program;
+             fovShader.Use();
+ 
+             SetupGlobalUniformsImmediate(fovShader, FovTexture);
+@@ -870,7 +924,10 @@ namespace Robust.Client.Graphics.Clyde
+         {
+             // Applies FOV to the lighting framebuffer.
+ 
+-            var fovShader = _loadedShaders[_fovLightShaderHandle].Program;
++            if (_fovLightShaderHandle == default || !_loadedShaders.TryGetValue(_fovLightShaderHandle, out var loadedFovLight))
++                return;
++
++            var fovShader = loadedFovLight.Program;
+             fovShader.Use();
+ 
+             SetupGlobalUniformsImmediate(fovShader, FovTexture);
+@@ -1235,6 +1292,10 @@ namespace Robust.Client.Graphics.Clyde
+ 
+         private void MaxShadowcastingLightsChanged(int newValue)
+         {
++            if (OperatingSystem.IsAndroid() && newValue > 24)
++            {
++                newValue = 16;
++            }
+             _maxShadowcastingLights = newValue;
+             DebugTools.Assert(_maxLights >= _maxShadowcastingLights);
+ 
+@@ -1267,6 +1328,10 @@ namespace Robust.Client.Graphics.Clyde
+ 
+         private void MaxLightsChanged(int value)
+         {
++            if (OperatingSystem.IsAndroid() && value > 512)
++            {
++                value = 256;
++            }
+             _maxLights = value;
+             _lightsToRenderList = new (PointLightComponent, Vector2, float , Angle)[value];
+             DebugTools.Assert(_maxLights >= _maxShadowcastingLights);
+diff --git a/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs b/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs
+index 8514701..17765dc 100644
+--- a/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs
++++ b/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs
+@@ -207,6 +207,7 @@ namespace Robust.Client.Graphics.Clyde
+                     versionHeader += "#define NO_ARRAY_PRECISION\n";
+                 }
+ 
++                versionHeader += "#ifdef FRAGMENT_SHADER\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n#endif\n";
+             }
+ 
+             if (_hasGLStandardDerivatives)
+@@ -249,9 +250,10 @@ namespace Robust.Client.Graphics.Clyde
+                 }
+                 catch (ShaderCompilationException e)
+                 {
+-                    File.WriteAllText("error.glsl", vertexSource);
++                    try { File.WriteAllText("error.glsl", vertexSource); } catch {}
++                    _clydeSawmill.Error($"Failed to compile vertex shader for '{name}': {e.Message}\nSource:\n{vertexSource}");
+                     throw new ShaderCompilationException(
+-                        "Failed to compile vertex shader, see inner for details (and error.glsl for formatted source).", e);
++                        $"Failed to compile vertex shader for '{name}': {e.Message}", e);
+                 }
+ 
+                 try
+@@ -260,9 +262,10 @@ namespace Robust.Client.Graphics.Clyde
+                 }
+                 catch (ShaderCompilationException e)
+                 {
+-                    File.WriteAllText("error.glsl", fragmentSource);
++                    try { File.WriteAllText("error.glsl", fragmentSource); } catch {}
++                    _clydeSawmill.Error($"Failed to compile fragment shader for '{name}': {e.Message}\nSource:\n{fragmentSource}");
+                     throw new ShaderCompilationException(
+-                        "Failed to compile fragment shader, see inner for details (and error.glsl for formatted source).", e);
++                        $"Failed to compile fragment shader for '{name}': {e.Message}", e);
+                 }
+ 
+                 var program = new GLShaderProgram(this, name);
+@@ -276,8 +279,8 @@ namespace Robust.Client.Graphics.Clyde
+                 catch (ShaderCompilationException e)
+                 {
+                     program.Delete();
+-
+-                    throw new ShaderCompilationException("Failed to link shaders. See inner for details.", e);
++                    _clydeSawmill.Error($"Failed to link shader program for '{name}': {e.Message}");
++                    throw new ShaderCompilationException($"Failed to link shader program for '{name}': {e.Message}", e);
+                 }
+ 
+                 return program;
+diff --git a/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs b/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
+index 62cb3cd..6f3950a 100644
+--- a/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
++++ b/Robust.Client/Graphics/Clyde/Clyde.Windowing.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.Diagnostics.CodeAnalysis;
+ using System.Numerics;
+@@ -50,6 +50,7 @@ namespace Robust.Client.Graphics.Clyde
+         public event Action<KeyEventArgs>? KeyUp;
+         public event Action<KeyEventArgs>? KeyDown;
+         public event Action<MouseWheelEventArgs>? MouseWheel;
++        public event Action<TouchFingerEventArgs>? TouchFinger;
+         public event Action<WindowRequestClosedEventArgs>? CloseWindow;
+         public event Action<WindowDestroyedEventArgs>? DestroyWindow;
+         public event Action<WindowContentScaleEventArgs>? OnWindowScaleChanged;
+diff --git a/Robust.Client/Graphics/Clyde/ClydeHeadless.cs b/Robust.Client/Graphics/Clyde/ClydeHeadless.cs
+index 093527e..02a960a 100644
+--- a/Robust.Client/Graphics/Clyde/ClydeHeadless.cs
++++ b/Robust.Client/Graphics/Clyde/ClydeHeadless.cs
+@@ -64,6 +64,7 @@ namespace Robust.Client.Graphics.Clyde
+         public event Action<KeyEventArgs>? KeyUp { add { } remove { } }
+         public event Action<KeyEventArgs>? KeyDown { add { } remove { } }
+         public event Action<MouseWheelEventArgs>? MouseWheel { add { } remove { } }
++        public event Action<TouchFingerEventArgs>? TouchFinger { add { } remove { } }
+         public event Action<WindowRequestClosedEventArgs>? CloseWindow { add { } remove { } }
+         public event Action<WindowDestroyedEventArgs>? DestroyWindow { add { } remove { } }
+ 
+diff --git a/Robust.Client/Graphics/Clyde/GLContext/GLContextEgl.cs b/Robust.Client/Graphics/Clyde/GLContext/GLContextEgl.cs
+index 9f14125..16841d6 100644
+--- a/Robust.Client/Graphics/Clyde/GLContext/GLContextEgl.cs
++++ b/Robust.Client/Graphics/Clyde/GLContext/GLContextEgl.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.Runtime.InteropServices;
+ using System.Text;
+diff --git a/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs b/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs
+index 2fe5442..145bef4 100644
+--- a/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs
++++ b/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs
+@@ -52,7 +52,7 @@ namespace Robust.Client.Graphics.Clyde
+             }
+ 
+             public override bool RequireWindowGL => true;
+-            // ANGLE does not support main window sRGB.
++            // ANGLE on Windows does not support main window sRGB.
+             public override bool HasBrokenWindowSrgb => Clyde._isGLES && OperatingSystem.IsWindows();
+ 
+             public GLContextWindow(Clyde clyde) : base(clyde)
+diff --git a/Robust.Client/Graphics/Clyde/Shaders/base-default.vert b/Robust.Client/Graphics/Clyde/Shaders/base-default.vert
+index 5195310..6893092 100644
+--- a/Robust.Client/Graphics/Clyde/Shaders/base-default.vert
++++ b/Robust.Client/Graphics/Clyde/Shaders/base-default.vert
+@@ -6,10 +6,10 @@
+ // Colour modulation.
+ /*layout (location = 3)*/ attribute vec4 modulate;
+ 
+-varying vec2 UV;
+-varying vec2 UV2;
+-varying vec2 Pos;
+-varying vec4 VtxModulate;
++varying highp vec2 UV;
++varying highp vec2 UV2;
++varying highp vec2 Pos;
++varying highp vec4 VtxModulate;
+ 
+ // Maybe we should merge these CPU side.
+ // idk yet.
+diff --git a/Robust.Client/Graphics/Clyde/Shaders/base-raw.vert b/Robust.Client/Graphics/Clyde/Shaders/base-raw.vert
+index 11fee7a..11c437e 100644
+--- a/Robust.Client/Graphics/Clyde/Shaders/base-raw.vert
++++ b/Robust.Client/Graphics/Clyde/Shaders/base-raw.vert
+@@ -6,8 +6,8 @@
+ // Colour modulation.
+ /*layout (location = 3)*/ attribute vec4 modulate;
+ 
+-varying vec2 UV;
+-varying vec2 UV2;
++varying highp vec2 UV;
++varying highp vec2 UV2;
+ 
+ // Maybe we should merge these CPU side.
+ // idk yet.
+diff --git a/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.frag b/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.frag
+index afb8f18..e4c4184 100644
+--- a/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.frag
++++ b/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.frag
+@@ -10,7 +10,9 @@ void main()
+     // p: Distance to closest point of line
+     // theta: Angle being queried
+     // phi: Angle of closest point of line - inherently on 90-degree angle to line angle
+-    highp float dist = abs(fragControl.z / cos(fragControl.x - fragControl.y));
++    highp float cosVal = cos(fragControl.x - fragControl.y);
++    if (abs(cosVal) < 1e-4) cosVal = sign(cosVal) * 1e-4;
++    highp float dist = clamp(abs(fragControl.z / cosVal), 0.0, 1000.0);
+ 
+     // Main body.
+ #ifdef HAS_DFDX
+diff --git a/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.vert b/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.vert
+index 76c0d73..9442690 100644
+--- a/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.vert
++++ b/Robust.Client/Graphics/Clyde/Shaders/shadow-depth.vert
+@@ -12,7 +12,7 @@ attribute vec4 aPos;
+ attribute vec2 subVertex;
+ 
+ // x: actual angle, y: line angle + 90 degrees, z: Distance at y
+-varying vec3 fragControl;
++varying highp vec3 fragControl;
+ 
+ // Note: This is *not* the standard projectionMatrix!
+ uniform vec2 shadowLightCentre;
+@@ -34,6 +34,8 @@ void main()
+     // aPos is clockwise, but we need anticlockwise so swap it here
+     vec2 pA = aPos.zw - shadowLightCentre;
+     vec2 pB = aPos.xy - shadowLightCentre;
++    if (dot(pA, pA) < 1e-8) pA = vec2(1e-4, 0.0);
++    if (dot(pB, pB) < 1e-8) pB = vec2(1e-4, 0.0);
+     float xA = atan(pA.y, -pA.x);
+     float xB = atan(pB.y, -pB.x);
+ 
+@@ -72,7 +74,15 @@ void main()
+ 
+     // Calculate the necessary control data for the fragment shader.
+     vec2 lineNormal = pB - pA; // hypothetical: <- would have negative X, zero Y
+-    lineNormal /= length(lineNormal);
++    float lineLen = length(lineNormal);
++    if (lineLen < 1e-5)
++    {
++        lineNormal = vec2(1.0, 0.0);
++    }
++    else
++    {
++        lineNormal /= lineLen;
++    }
+     fragControl = vec3(
+         // Angle
+         targetAngle,
+diff --git a/Robust.Client/Graphics/Clyde/Shaders/winblit.vert b/Robust.Client/Graphics/Clyde/Shaders/winblit.vert
+index 75211d3..a0f5bee 100644
+--- a/Robust.Client/Graphics/Clyde/Shaders/winblit.vert
++++ b/Robust.Client/Graphics/Clyde/Shaders/winblit.vert
+@@ -10,7 +10,7 @@
+ // Texture coordinates.
+ /*layout (location = 1)*/ attribute vec2 tCoord;
+ 
+-varying vec2 UV;
++varying highp vec2 UV;
+ 
+ void main()
+ {
+diff --git a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Event.cs b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Event.cs
+index 80f9d62..6dcbca7 100644
+--- a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Event.cs
++++ b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Event.cs
+@@ -1,9 +1,10 @@
+-﻿using System;
++using System;
+ using System.Numerics;
+ using Robust.Client.Input;
+ using Robust.Shared.Map;
+ using SDL3;
+ using Key = Robust.Client.Input.Keyboard.Key;
++using Button = Robust.Client.Input.Mouse.Button;
+ using ET = SDL3.SDL.SDL_EventType;
+ using SDL_Keymod = SDL3.SDL.SDL_Keymod;
+ 
+@@ -15,8 +16,45 @@ internal partial class Clyde
+     {
+         public void ProcessEvents(bool single = false)
+         {
++            EventMouseMotion? pendingMotion = null;
++            Vector2 accumulatedDelta = Vector2.Zero;
++
++            void FlushPendingMotion()
++            {
++                if (pendingMotion != null)
++                {
++                    try
++                    {
++                        ProcessEventMouseMotion(pendingMotion, accumulatedDelta);
++                    }
++                    catch (Exception e)
++                    {
++                        _sawmill.Error($"Caught exception in windowing event (EventMouseMotion):\n{e}");
++                    }
++                    pendingMotion = null;
++                    accumulatedDelta = Vector2.Zero;
++                }
++            }
++
+             while (_eventReader.TryRead(out var ev))
+             {
++                if (ev is EventMouseMotion motion)
++                {
++                    if (pendingMotion != null && pendingMotion.WindowId != motion.WindowId)
++                    {
++                        FlushPendingMotion();
++                    }
++
++                    pendingMotion = motion;
++                    accumulatedDelta += new Vector2(motion.XRel, motion.YRel);
++                    if (!single)
++                        continue;
++                }
++                else
++                {
++                    FlushPendingMotion();
++                }
++
+                 try
+                 {
+                     ProcessEvent(ev);
+@@ -29,6 +67,8 @@ internal partial class Clyde
+                 if (single)
+                     break;
+             }
++
++            FlushPendingMotion();
+         }
+ 
+         // Block waiting on the windowing -> game thread channel.
+@@ -69,6 +109,9 @@ internal partial class Clyde
+                 case EventMouseButton ev:
+                     ProcessEventMouseButton(ev);
+                     break;
++                case EventTouchFinger ev:
++                    ProcessEventTouchFinger(ev);
++                    break;
+                 case EventWheel ev:
+                     ProcessEventWheel(ev);
+                     break;
+@@ -162,18 +205,45 @@ internal partial class Clyde
+                 return;
+ 
+             var button = ConvertSdl3Button(ev.Button);
++
+             var key = Mouse.MouseButtonToKey(button);
+             EmitKeyEvent(key, ev.Type, false, ev.Mods, 0, 0);
+         }
+ 
+-        private void ProcessEventMouseMotion(EventMouseMotion ev)
++        private void ProcessEventTouchFinger(EventTouchFinger ev)
++        {
++            var windowReg = FindWindow(ev.WindowId) ?? _clyde._mainWindow;
++            if (windowReg == null)
++                return;
++
++            var fb = windowReg.FramebufferSize;
++            if (fb.X <= 0 || fb.Y <= 0)
++                fb = windowReg.WindowSize;
++            if (fb.X <= 0) fb.X = 1;
++            if (fb.Y <= 0) fb.Y = 1;
++
++            var pixelPos = new Vector2(ev.X * fb.X, ev.Y * fb.Y);
++            TouchFingerAction action = ev.Type switch
++            {
++                ET.SDL_EVENT_FINGER_DOWN => TouchFingerAction.Down,
++                ET.SDL_EVENT_FINGER_MOTION => TouchFingerAction.Motion,
++                ET.SDL_EVENT_FINGER_UP => TouchFingerAction.Up,
++                ET.SDL_EVENT_FINGER_CANCELED => TouchFingerAction.Cancel,
++                _ => TouchFingerAction.Cancel
++            };
++
++            var screenCoords = new ScreenCoordinates(pixelPos, windowReg.Id);
++            _clyde.SendTouchFinger(new TouchFingerEventArgs(action, ev.FingerId, screenCoords));
++        }
++
++        private void ProcessEventMouseMotion(EventMouseMotion ev, Vector2? customDelta = null)
+         {
+             var windowReg = FindWindow(ev.WindowId);
+             if (windowReg == null)
+                 return;
+ 
+             var newPos = new Vector2(ev.X, ev.Y) * windowReg.PixelRatio;
+-            var delta = new Vector2(ev.XRel, ev.YRel);
++            var delta = customDelta ?? new Vector2(ev.XRel, ev.YRel);
+             windowReg.LastMousePos = newPos;
+ 
+             _clyde._currentHoveredWindow = windowReg;
+diff --git a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.RawEvent.cs b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.RawEvent.cs
+index 1b6cdba..af2cb75 100644
+--- a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.RawEvent.cs
++++ b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.RawEvent.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Runtime.CompilerServices;
+ using System.Runtime.InteropServices;
+ using System.Threading.Tasks;
+@@ -73,6 +73,12 @@ internal partial class Clyde
+                 case ET.SDL_EVENT_QUIT:
+                     ProcessSdl3EventQuit();
+                     break;
++                case ET.SDL_EVENT_FINGER_DOWN:
++                case ET.SDL_EVENT_FINGER_UP:
++                case ET.SDL_EVENT_FINGER_MOTION:
++                case ET.SDL_EVENT_FINGER_CANCELED:
++                    ProcessSdl3EventTouchFinger(in ev.tfinger);
++                    break;
+             }
+         }
+ 
+@@ -81,6 +87,20 @@ internal partial class Clyde
+             SendEvent(new EventQuit());
+         }
+ 
++        private void ProcessSdl3EventTouchFinger(in SDL.SDL_TouchFingerEvent ev)
++        {
++            SendEvent(new EventTouchFinger
++            {
++                WindowId = ev.windowID,
++                Type = (ET)ev.type,
++                FingerId = (long)ev.fingerID,
++                X = ev.x,
++                Y = ev.y,
++                Dx = ev.dx,
++                Dy = ev.dy,
++            });
++        }
++
+         private void ProcessSdl3EventMouseWheel(in SDL.SDL_MouseWheelEvent ev)
+         {
+             SendEvent(new EventWheel { WindowId = ev.windowID, XOffset = ev.x, YOffset = ev.y });
+@@ -279,6 +299,17 @@ internal partial class Clyde
+ 
+         private sealed class EventKeyMapChanged : EventBase;
+ 
++        private sealed class EventTouchFinger : EventBase
++        {
++            public uint WindowId;
++            public ET Type;
++            public long FingerId;
++            public float X;
++            public float Y;
++            public float Dx;
++            public float Dy;
++        }
++
+         private sealed class EventQuit : EventBase;
+ 
+ #if MACOS
+diff --git a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Window.cs b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Window.cs
+index dd12203..91fe3b9 100644
+--- a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Window.cs
++++ b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.Window.cs
+@@ -214,6 +214,11 @@ internal partial class Clyde
+                     WsiShared.EnsureEglAvailable();
+             }
+ 
++            if (OperatingSystem.IsAndroid())
++            {
++                SDL.SDL_SetHint("SDL_ORIENTATIONS", "LandscapeLeft LandscapeRight");
++            }
++
+             if (parameters.Fullscreen)
+                 SDL.SDL_SetBooleanProperty(createProps, SDL.SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
+ 
+@@ -300,7 +305,10 @@ internal partial class Clyde
+             SDL.SDL_GL_MakeCurrent(IntPtr.Zero, IntPtr.Zero);
+ 
+             if (parameters.Visible)
++            {
+                 SDL.SDL_ShowWindow(window);
++                SDL.SDL_RaiseWindow(window);
++            }
+ 
+             return (window, glContext);
+         }
+@@ -351,6 +359,8 @@ internal partial class Clyde
+ 
+             reg.PixelRatio = reg.FramebufferSize / (Vector2)reg.WindowSize;
+ 
++            SDL.SDL_RaiseWindow(window);
++
+             return reg;
+         }
+ 
+@@ -499,6 +509,25 @@ internal partial class Clyde
+             }
+         }
+ 
++#if WINDOWS
++        [MethodImpl(MethodImplOptions.NoInlining)]
++        private static unsafe bool DwmIsCompositionEnabledHelper()
++        {
++            BOOL compositing;
++            return Windows.SUCCEEDED(Windows.DwmIsCompositionEnabled(&compositing)) && compositing;
++        }
++
++        [MethodImpl(MethodImplOptions.NoInlining)]
++        private static void DwmFlushHelper(int swapInterval)
++        {
++            var i = swapInterval;
++            while (i-- > 0)
++            {
++                Windows.DwmFlush();
++            }
++        }
++#endif
++
+         public unsafe void WindowSwapBuffers(WindowReg window)
+         {
+             var reg = (Sdl3WindowReg)window;
+@@ -517,13 +546,12 @@ internal partial class Clyde
+             var dwmFlush = false;
+             var swapInterval = 0;
+ 
+-            if (!reg.Fullscreen && reg.SwapInterval > 0)
++            if (OperatingSystem.IsWindows() && !reg.Fullscreen && reg.SwapInterval > 0)
+             {
+-                BOOL compositing;
+                 // 6.2 is Windows 8
+                 // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ns-wdm-_osversioninfoexw
+                 if (OperatingSystem.IsWindowsVersionAtLeast(6, 2)
+-                    || Windows.SUCCEEDED(Windows.DwmIsCompositionEnabled(&compositing)) && compositing)
++                    || DwmIsCompositionEnabledHelper())
+                 {
+                     var curCtx = SDL.SDL_GL_GetCurrentContext();
+                     var curWin = SDL.SDL_GL_GetCurrentWindow();
+@@ -542,13 +570,9 @@ internal partial class Clyde
+             SDL.SDL_GL_SwapWindow(windowPtr);
+ 
+ #if WINDOWS
+-            if (dwmFlush)
++            if (OperatingSystem.IsWindows() && dwmFlush)
+             {
+-                var i = swapInterval;
+-                while (i-- > 0)
+-                {
+-                    Windows.DwmFlush();
+-                }
++                DwmFlushHelper(swapInterval);
+ 
+                 SDL.SDL_GL_SetSwapInterval(swapInterval);
+             }
+@@ -623,7 +647,18 @@ internal partial class Clyde
+ 
+         private static void WinThreadStartTextInput(CmdTextInputStart cmd)
+         {
++            if (OperatingSystem.IsAndroid())
++            {
++                var checkFunc = AppDomain.CurrentDomain.GetData("SS14_IS_HARDWARE_KEYBOARD_CONNECTED") as Func<bool>;
++                var isConnected = checkFunc != null ? checkFunc() : ((bool?)AppDomain.CurrentDomain.GetData("SS14_HARDWARE_KEYBOARD_CONNECTED") == true);
++                SDL.SDL_SetHint("SDL_ENABLE_SCREEN_KEYBOARD", isConnected ? "0" : "1");
++            }
++
+             SDL.SDL_StartTextInput(cmd.Window);
++            AppDomain.CurrentDomain.SetData("SS14_TEXT_INPUT_ACTIVE", true);
++
++            var dismissAction = AppDomain.CurrentDomain.GetData("SS14_DISMISS_SOFT_KEYBOARD_IF_HARDWARE") as Action;
++            dismissAction?.Invoke();
+         }
+ 
+         public void TextInputStop(WindowReg reg)
+@@ -634,6 +669,7 @@ internal partial class Clyde
+         private static void WinThreadStopTextInput(CmdTextInputStop cmd)
+         {
+             SDL.SDL_StopTextInput(cmd.Window);
++            AppDomain.CurrentDomain.SetData("SS14_TEXT_INPUT_ACTIVE", false);
+         }
+ 
+         public void ClipboardSetText(WindowReg mainWindow, string text)
+@@ -678,6 +714,11 @@ internal partial class Clyde
+                     return windowReg;
+             }
+ 
++            if (OperatingSystem.IsAndroid() || _clyde._windows.Count == 1)
++            {
++                return _clyde._mainWindow;
++            }
++
+             return null;
+         }
+ 
+diff --git a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs
+index ee73bde..be9a7a2 100644
+--- a/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs
++++ b/Robust.Client/Graphics/Clyde/Windowing/Sdl3.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Runtime.CompilerServices;
+ using System.Runtime.InteropServices;
+ using System.Threading;
+@@ -65,6 +65,7 @@ internal partial class Clyde
+             SDL.SDL_SetHint(SDL.SDL_HINT_MAC_OPENGL_ASYNC_DISPATCH, "1");
+ #endif
+ 
++
+             var res = SDL.SDL_Init(SDL.SDL_InitFlags.SDL_INIT_VIDEO | SDL.SDL_InitFlags.SDL_INIT_EVENTS);
+             if (!res)
+             {
+diff --git a/Robust.Client/Graphics/IClydeInternal.cs b/Robust.Client/Graphics/IClydeInternal.cs
+index 388522f..6d889cf 100644
+--- a/Robust.Client/Graphics/IClydeInternal.cs
++++ b/Robust.Client/Graphics/IClydeInternal.cs
+@@ -32,6 +32,7 @@ namespace Robust.Client.Graphics
+         event Action<KeyEventArgs> KeyUp;
+         event Action<KeyEventArgs> KeyDown;
+         event Action<MouseWheelEventArgs> MouseWheel;
++        event Action<TouchFingerEventArgs> TouchFinger;
+         event Action<WindowRequestClosedEventArgs> CloseWindow;
+         event Action<WindowDestroyedEventArgs> DestroyWindow;
+ 
+diff --git a/Robust.Client/Input/InputManager.cs b/Robust.Client/Input/InputManager.cs
+index 96238a9..e3d81c2 100644
+--- a/Robust.Client/Input/InputManager.cs
++++ b/Robust.Client/Input/InputManager.cs
+@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
+ using System.Text;
+ using JetBrains.Annotations;
+ using Robust.Client.UserInterface;
++using Robust.Client.UserInterface.Mobile;
+ using Robust.Shared.Collections;
+ using Robust.Shared.Console;
+ using Robust.Shared.ContentPack;
+@@ -229,6 +230,34 @@ namespace Robust.Client.Input
+                 return;
+             }
+ 
++            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsSecondaryActive && args.Key == Key.MouseLeft)
++            {
++                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
++                if (!isUI)
++                {
++                    args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
++                    MobileControlsOverlay.ResetSecondaryMode();
++                }
++            }
++
++            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsExamActive && args.Key == Key.MouseLeft)
++            {
++                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
++                if (!isUI)
++                {
++                    MobileControlsOverlay.ResetExamMode();
++                }
++            }
++
++            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsPullActive && args.Key == Key.MouseLeft)
++            {
++                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
++                if (!isUI)
++                {
++                    MobileControlsOverlay.ResetPullMode();
++                }
++            }
++
+             _keysPressed[(int) args.Key] = true;
+ 
+             PackedKeyCombo matchedCombo = default;
+@@ -261,9 +290,13 @@ namespace Robust.Client.Input
+                     }
+                     else if (PackedIsSubPattern(matchedCombo, binding.PackedKeyCombo))
+                     {
+-                        if (hasAllowSubCombs)
++                        // UI clicks (UIClick / UIRightClick) must NEVER be suppressed by gameplay world combos
++                        // (such as TryPullObject = Ctrl+Click, ExamineEntity = Shift+Click, AltActivate = Alt+Click).
++                        // Otherwise, holding or toggling a modifier key completely freezes UI interaction.
++                        if (hasAllowSubCombs || binding.Function == EngineKeyFunctions.UIClick || binding.Function == EngineKeyFunctions.UIRightClick)
+                         {
+                             bindsDown.Add(binding);
++                            hasCanFocus |= binding.CanFocus;
+                         }
+                         else
+                         {
+@@ -321,6 +354,11 @@ namespace Robust.Client.Input
+                 return;
+             }
+ 
++            if (OperatingSystem.IsAndroid() && args.Key == Key.MouseLeft && _keysPressed[(int)Key.MouseRight] && !_keysPressed[(int)Key.MouseLeft])
++            {
++                args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
++            }
++
+             FirstChanceOnKeyEvent?.Invoke(args, KeyEventType.Up);
+ 
+             var hasCanFocus = false;
+diff --git a/Robust.Client/Input/TouchFingerEventArgs.cs b/Robust.Client/Input/TouchFingerEventArgs.cs
+new file mode 100644
+index 0000000..c139d8f
+--- /dev/null
++++ b/Robust.Client/Input/TouchFingerEventArgs.cs
+@@ -0,0 +1,27 @@
++using System;
++using System.Numerics;
++using Robust.Shared.Map;
++
++namespace Robust.Client.Input;
++
++public enum TouchFingerAction
++{
++    Down,
++    Motion,
++    Up,
++    Cancel
++}
++
++public sealed class TouchFingerEventArgs : EventArgs
++{
++    public TouchFingerAction Action { get; }
++    public long FingerId { get; }
++    public ScreenCoordinates Coordinates { get; }
++
++    public TouchFingerEventArgs(TouchFingerAction action, long fingerId, ScreenCoordinates coordinates)
++    {
++        Action = action;
++        FingerId = fingerId;
++        Coordinates = coordinates;
++    }
++}
+diff --git a/Robust.Client/Robust.Client.csproj b/Robust.Client/Robust.Client.csproj
+index c99c8a4..d6fb195 100644
+--- a/Robust.Client/Robust.Client.csproj
++++ b/Robust.Client/Robust.Client.csproj
+@@ -1,9 +1,9 @@
+-﻿<Project Sdk="Microsoft.NET.Sdk">
++<Project Sdk="Microsoft.NET.Sdk">
+   <Import Project="..\MSBuild\Robust.Engine.props" />
+   <PropertyGroup>
+     <IsPackable>false</IsPackable>
+     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+-    <OutputType>WinExe</OutputType>
++    <OutputType>Library</OutputType>
+     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+     <NoWarn>NU1701;CA1416</NoWarn>
+     <OutputPath>../bin/Client</OutputPath>
+diff --git a/Robust.Client/UserInterface/Control.Layout.cs b/Robust.Client/UserInterface/Control.Layout.cs
+index 2c7ef9c..d7f4f36 100644
+--- a/Robust.Client/UserInterface/Control.Layout.cs
++++ b/Robust.Client/UserInterface/Control.Layout.cs
+@@ -40,6 +40,7 @@ namespace Robust.Client.UserInterface
+         private Thickness _margin;
+         private bool _measuring;
+         private bool _arranging;
++        private bool _onlyPositionChanged;
+ 
+         /// <summary>
+         /// The desired minimum size this control needs for layout to avoid cutting off content or such.
+@@ -651,6 +652,7 @@ namespace Robust.Client.UserInterface
+ 
+                 if (!IsArrangeValid || PreviousArrange != finalRect)
+                 {
++                    _onlyPositionChanged = IsArrangeValid && PreviousArrange.HasValue && PreviousArrange.Value.Size == finalRect.Size;
+                     IsArrangeValid = true;
+                     ArrangeCore(finalRect);
+                     PreviousArrange = finalRect;
+@@ -659,6 +661,7 @@ namespace Robust.Client.UserInterface
+             finally
+             {
+                 _arranging = false;
++                _onlyPositionChanged = false;
+             }
+         }
+ 
+@@ -686,9 +689,11 @@ namespace Robust.Client.UserInterface
+ 
+             size = ApplySizeConstraints(this, size);
+ 
+-            var arranged = ArrangeOverride(size);
+-
+-            size = Vector2.Min(arranged, size);
++            if (!_onlyPositionChanged || size != Size)
++            {
++                var arranged = ArrangeOverride(size);
++                size = Vector2.Min(arranged, size);
++            }
+ 
+             switch (HorizontalAlignment)
+             {
+diff --git a/Robust.Client/UserInterface/Controls/ItemList.cs b/Robust.Client/UserInterface/Controls/ItemList.cs
+index b727287..0413d99 100644
+--- a/Robust.Client/UserInterface/Controls/ItemList.cs
++++ b/Robust.Client/UserInterface/Controls/ItemList.cs
+@@ -620,6 +620,13 @@ namespace Robust.Client.UserInterface.Controls
+             args.Handle();
+         }
+ 
++        public void ScrollByDelta(float deltaY)
++        {
++            _scrollBar.Value -= deltaY;
++            _scrollBar.ValueTarget = _scrollBar.Value;
++            _isAtBottom = _scrollBar.IsAtEnd;
++        }
++
+         [Pure]
+         private int _getScrollSpeed()
+         {
+diff --git a/Robust.Client/UserInterface/Controls/LineEdit.cs b/Robust.Client/UserInterface/Controls/LineEdit.cs
+index dd3a49a..956a45f 100644
+--- a/Robust.Client/UserInterface/Controls/LineEdit.cs
++++ b/Robust.Client/UserInterface/Controls/LineEdit.cs
+@@ -336,9 +336,12 @@ namespace Robust.Client.UserInterface.Controls
+             if (IgnoreNext)
+             {
+                 IgnoreNext = false;
++                AbortIme(delete: true);
+                 return;
+             }
+ 
++            AbortIme(delete: true);
++
+             InsertAtCursor(args.Text);
+             OnTextTyped?.Invoke(args);
+         }
+diff --git a/Robust.Client/UserInterface/Controls/OutputPanel.cs b/Robust.Client/UserInterface/Controls/OutputPanel.cs
+index e0d1624..0e88d11 100644
+--- a/Robust.Client/UserInterface/Controls/OutputPanel.cs
++++ b/Robust.Client/UserInterface/Controls/OutputPanel.cs
+@@ -260,6 +260,12 @@ namespace Robust.Client.UserInterface.Controls
+             _scrollBar.ValueTarget -= _getScrollSpeed() * args.Delta.Y;
+         }
+ 
++        public void ScrollByDelta(float deltaY)
++        {
++            _scrollBar.Value -= deltaY;
++            _scrollBar.ValueTarget = _scrollBar.Value;
++        }
++
+         protected override void Resized()
+         {
+             base.Resized();
+diff --git a/Robust.Client/UserInterface/Controls/ScrollBar.cs b/Robust.Client/UserInterface/Controls/ScrollBar.cs
+index d6abd43..1754fa6 100644
+--- a/Robust.Client/UserInterface/Controls/ScrollBar.cs
++++ b/Robust.Client/UserInterface/Controls/ScrollBar.cs
+@@ -104,7 +104,22 @@ namespace Robust.Client.UserInterface.Controls
+             var box = _getGrabberBox();
+             if (!box.Contains(args.RelativePixelPosition))
+             {
+-                return;
++                if (OperatingSystem.IsAndroid())
++                {
++                    var trackSize = _getOrientationSize();
++                    if (trackSize > 0)
++                    {
++                        var touchRel = _orientation == OrientationMode.Horizontal
++                            ? args.RelativePixelPosition.X
++                            : args.RelativePixelPosition.Y;
++                        var ratio = Math.Clamp(touchRel / trackSize, 0f, 1f);
++                        Value = MinValue + ratio * (MaxValue - MinValue);
++                    }
++                }
++                else
++                {
++                    return;
++                }
+             }
+ 
+             _grabData = (args.RelativePixelPosition, Value);
+diff --git a/Robust.Client/UserInterface/Controls/TextEdit.cs b/Robust.Client/UserInterface/Controls/TextEdit.cs
+index 4633b99..b74f173 100644
+--- a/Robust.Client/UserInterface/Controls/TextEdit.cs
++++ b/Robust.Client/UserInterface/Controls/TextEdit.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Frozen;
+ using System.Collections.Generic;
+ using System.Diagnostics.Contracts;
+@@ -725,6 +725,8 @@ public sealed class TextEdit : Control
+         if (!Editable)
+             return;
+ 
++        AbortIme(delete: true);
++
+         InsertAtCursor(args.Text);
+         _blink.Reset();
+         EnsureCursorVisible();
+diff --git a/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs b/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs
+index 9e6568e..2f7f08d 100644
+--- a/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs
++++ b/Robust.Client/UserInterface/CustomControls/DefaultWindow.xaml.cs
+@@ -58,7 +58,7 @@ namespace Robust.Client.UserInterface.CustomControls
+             RobustXamlLoader.Load(this);
+             MouseFilter = MouseFilterMode.Stop;
+ 
+-            WindowHeader.MinSize = new Vector2(0, HEADER_SIZE_Y);
++            WindowHeader.MinSize = new Vector2(0, HeaderSizeY);
+ 
+             Contents = ContentsContainer;
+ 
+@@ -107,7 +107,7 @@ namespace Robust.Client.UserInterface.CustomControls
+         private const int DRAG_MARGIN_SIZE = 7;
+ 
+         // TODO: Un-hard code this header size.
+-        private const float HEADER_SIZE_Y = 25;
++        private static float HeaderSizeY => OperatingSystem.IsAndroid() ? 42f : 25f;
+         protected virtual Vector2 ContentsMinimumSize => new Vector2(50, 50);
+ 
+         protected override Vector2 MeasureOverride(Vector2 availableSize)
+@@ -196,7 +196,7 @@ namespace Robust.Client.UserInterface.CustomControls
+                 }
+             }
+ 
+-            if (mode == DragMode.None && relativeMousePos.Y < HEADER_SIZE_Y)
++            if (mode == DragMode.None && relativeMousePos.Y < HeaderSizeY)
+             {
+                 mode = DragMode.Move;
+             }
+diff --git a/Robust.Client/UserInterface/IUserInterfaceManagerInternal.cs b/Robust.Client/UserInterface/IUserInterfaceManagerInternal.cs
+index 29c54bc..a21a747 100644
+--- a/Robust.Client/UserInterface/IUserInterfaceManagerInternal.cs
++++ b/Robust.Client/UserInterface/IUserInterfaceManagerInternal.cs
+@@ -29,6 +29,7 @@ namespace Robust.Client.UserInterface
+         void MouseMove(MouseMoveEventArgs mouseMoveEventArgs);
+ 
+         void MouseWheel(MouseWheelEventArgs args);
++        void TouchFinger(TouchFingerEventArgs args);
+ 
+         void TextEntered(TextEnteredEventArgs textEnteredEvent);
+ 
+diff --git a/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
+new file mode 100644
+index 0000000..f1651ce
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/MobileControlsOverlay.cs
+@@ -0,0 +1,1133 @@
++using System;
++using System.Collections.Generic;
++using System.Globalization;
++using System.IO;
++using System.Numerics;
++using Robust.Client.Graphics;
++using Robust.Client.Input;
++using Robust.Client.UserInterface;
++using Robust.Client.UserInterface.Controls;
++using Robust.Shared;
++using Robust.Shared.Configuration;
++using Robust.Shared.Input;
++using Robust.Shared.IoC;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++public sealed partial class MobileControlsOverlay : Control
++{
++    [Dependency] private readonly IConfigurationManager _cfg = default!;
++
++    public static bool IsEditMode { get; private set; }
++
++    private readonly VirtualThumbstick _thumbstick;
++    public static bool IsSecondaryActive { get; set; }
++    private static PojavActionButton? _staticSecButton;
++
++    public static void ResetSecondaryMode()
++    {
++        IsSecondaryActive = false;
++        if (_staticSecButton != null)
++        {
++            _staticSecButton.ResetToggle();
++        }
++    }
++
++    public static bool IsExamActive { get; set; }
++    private static PojavActionButton? _staticExamButton;
++
++    public static void ResetExamMode()
++    {
++        IsExamActive = false;
++        if (_staticExamButton != null && _staticExamButton.IsToggled)
++        {
++            _staticExamButton.ResetToggle();
++        }
++        else if (IoCManager.Resolve<IInputManager>().IsKeyDown(Keyboard.Key.Shift))
++        {
++            IoCManager.Resolve<IInputManager>().KeyUp(new KeyEventArgs(Keyboard.Key.Shift, false, false, false, false, false, 0));
++        }
++    }
++
++    public static bool IsPullActive { get; set; }
++    private static PojavActionButton? _staticPullButton;
++
++    public static void ResetPullMode()
++    {
++        IsPullActive = false;
++        if (_staticPullButton != null && _staticPullButton.IsToggled)
++        {
++            _staticPullButton.ResetToggle();
++        }
++        else if (IoCManager.Resolve<IInputManager>().IsKeyDown(Keyboard.Key.Control))
++        {
++            IoCManager.Resolve<IInputManager>().KeyUp(new KeyEventArgs(Keyboard.Key.Control, false, false, false, false, false, 0));
++        }
++    }
++
++    private readonly PojavActionButton _pullButton;
++    private readonly PojavActionButton _examButton;
++
++    private readonly PojavActionButton _useButton;
++    private readonly PojavActionButton _interactButton;
++    private readonly PojavActionButton _secButton;
++    private readonly PojavActionButton _handButton;
++    private readonly PojavActionButton _dropButton;
++    private readonly PojavActionButton _altButton;
++    private readonly PojavActionButton _bagButton;
++    private readonly PojavActionButton _throwButton;
++
++    private readonly Dictionary<long, Control> _claimedTouches = new();
++
++    private readonly PojavActionButton _escButton;
++    private readonly PojavActionButton _keybButton;
++    private readonly PojavActionButton _editButton;
++    private readonly PojavActionButton _hideButton;
++
++    private readonly Control _clusterContainer;
++    private readonly Control _topUtilityContainer;
++    private readonly Control _editorBarContainer;
++    private readonly Label _editorBanner;
++    private readonly Button _addBtn;
++    private readonly Button _scaleMinusBtn;
++    private readonly Button _scalePlusBtn;
++    private readonly Button _resetBtn;
++    private readonly Button _doneBtn;
++
++    private readonly Control _modalOverlay = new()
++    {
++        Visible = false,
++        MouseFilter = MouseFilterMode.Stop,
++        HorizontalExpand = true,
++        VerticalExpand = true
++    };
++    private readonly PanelContainer _dialogPanel = new();
++    private readonly Label _dialogTitle = new()
++    {
++        Text = "BUTTON SETTINGS",
++        FontColorOverride = new Color(255, 215, 0),
++        HorizontalAlignment = HAlignment.Center
++    };
++    private readonly LineEdit _dialogNameInput = new() { HorizontalExpand = true, MinSize = new Vector2(140, 32) };
++    private readonly LineEdit _dialogKeyInput = new() { HorizontalExpand = true, MinSize = new Vector2(140, 32) };
++    private readonly Label _sizeDisplayLabel = new()
++    {
++        Text = "50 px",
++        MinSize = new Vector2(60, 0),
++        HorizontalAlignment = HAlignment.Center,
++        VerticalAlignment = VAlignment.Center
++    };
++    private readonly Button _saveBtn = new() { Text = "SAVE" };
++    private readonly Button _deleteBtn = new() { Text = "DELETE BUTTON" };
++    private readonly Button _cancelBtn = new() { Text = "CANCEL" };
++
++    private PojavActionButton? _currentEditingButton;
++    private float _dialogButtonSize = 50f;
++    private string _lastSelectedQuickKey = "";
++
++    private bool _controlsHidden;
++    private readonly List<PojavActionButton> _allButtons = new();
++    private readonly List<PojavActionButton> _defaultButtons = new();
++    private readonly HashSet<string> _deletedButtonIds = new();
++    private readonly Dictionary<string, Vector2> _savedPositions = new();
++    private readonly Dictionary<string, float> _savedSizes = new();
++
++    private Control? _currentlyDraggingControl;
++    private Vector2? _dragTouchOffset;
++    private Vector2 _dragStartPos;
++    private bool _hasDraggedCurrent;
++
++    public MobileControlsOverlay()
++    {
++        IoCManager.InjectDependencies(this);
++
++        MouseFilter = MouseFilterMode.Ignore;
++        HorizontalExpand = true;
++        VerticalExpand = true;
++
++        _clusterContainer = new Control
++        {
++            MouseFilter = MouseFilterMode.Ignore,
++            HorizontalExpand = true,
++            VerticalExpand = true
++        };
++        AddChild(_clusterContainer);
++
++        _thumbstick = new VirtualThumbstick();
++        _thumbstick.OnPositionChanged += SaveLayout;
++        _thumbstick.OnStickSteering += () =>
++        {
++            if (IsExamActive || IoCManager.Resolve<IInputManager>().IsKeyDown(Keyboard.Key.Shift))
++            {
++                ResetExamMode();
++            }
++        };
++        _clusterContainer.AddChild(_thumbstick);
++
++        _pullButton = CreateButton("PULL", Keyboard.Key.Control, id: "pull", accent: new Color(155, 89, 182), isToggle: true);
++        _pullButton.OnPressed = () =>
++        {
++            IsPullActive = _pullButton.IsToggled;
++        };
++        _pullButton.OnReleased = () =>
++        {
++            IsPullActive = false;
++        };
++        _staticPullButton = _pullButton;
++
++        _examButton = CreateButton("EXAM", Keyboard.Key.Shift, id: "exam", accent: new Color(52, 152, 219), isToggle: true);
++        _examButton.OnPressed = () =>
++        {
++            IsExamActive = _examButton.IsToggled;
++        };
++        _examButton.OnReleased = () =>
++        {
++            IsExamActive = false;
++        };
++        _staticExamButton = _examButton;
++
++        _useButton = CreateButton("USE", Keyboard.Key.Z, id: "use", accent: new Color(0, 180, 216));
++        _interactButton = CreateButton("INTER", Keyboard.Key.E, id: "inter", accent: new Color(46, 204, 113));
++        _secButton = CreateButton("SEC", null, PojavSpecialAction.Secondary, id: "sec", accent: new Color(230, 126, 34), isToggle: true);
++        _secButton.OnPressed = () =>
++        {
++            IsSecondaryActive = _secButton.IsToggled;
++        };
++        _staticSecButton = _secButton;
++        _handButton = CreateButton("HAND", Keyboard.Key.X, id: "hand", accent: new Color(243, 156, 18));
++        _dropButton = CreateButton("DROP", Keyboard.Key.Q, id: "drop", accent: new Color(231, 76, 60));
++        _altButton = CreateButton("ALT", Keyboard.Key.Alt, id: "alt", accent: new Color(241, 196, 15), isToggle: true);
++        _bagButton = CreateButton("BAG", Keyboard.Key.V, id: "bag", accent: new Color(26, 188, 156));
++        _throwButton = CreateButton("THROW", null, PojavSpecialAction.Throw, id: "throw", accent: new Color(230, 81, 0));
++
++        _defaultButtons.AddRange(_allButtons);
++
++        _editorBarContainer = new Control
++        {
++            Visible = false,
++            MouseFilter = MouseFilterMode.Stop,
++            HorizontalExpand = true
++        };
++        AddChild(_editorBarContainer);
++
++        var barPanel = new PanelContainer
++        {
++            PanelOverride = new StyleBoxFlat
++            {
++                BackgroundColor = new Color(15, 18, 26, 235),
++                BorderColor = new Color(255, 215, 0, 240),
++                BorderThickness = new Thickness(2)
++            }
++        };
++        _editorBarContainer.AddChild(barPanel);
++
++        var barLayout = new BoxContainer
++        {
++            Orientation = BoxContainer.LayoutOrientation.Horizontal,
++            SeparationOverride = 8,
++            Margin = new Thickness(8, 4)
++        };
++        barPanel.AddChild(barLayout);
++
++        _editorBanner = new Label
++        {
++            Text = "EDIT CONTROLS:",
++            FontColorOverride = new Color(255, 230, 100),
++            VerticalAlignment = VAlignment.Center
++        };
++        barLayout.AddChild(_editorBanner);
++
++        _addBtn = new Button { Text = "+ BUTTON" };
++        _addBtn.OnPressed += _ => OpenAddButtonDialog();
++        barLayout.AddChild(_addBtn);
++
++        _scaleMinusBtn = new Button { Text = "SCALE -" };
++        _scaleMinusBtn.OnPressed += _ => AdjustScale(-0.1f);
++        barLayout.AddChild(_scaleMinusBtn);
++
++        _scalePlusBtn = new Button { Text = "SCALE +" };
++        _scalePlusBtn.OnPressed += _ => AdjustScale(0.1f);
++        barLayout.AddChild(_scalePlusBtn);
++
++        _resetBtn = new Button { Text = "RESET" };
++        _resetBtn.OnPressed += _ => ResetToDefaultLayout();
++        barLayout.AddChild(_resetBtn);
++
++        _doneBtn = new Button { Text = "DONE" };
++        _doneBtn.OnPressed += _ => ToggleEditMode();
++        barLayout.AddChild(_doneBtn);
++
++        _topUtilityContainer = new Control
++        {
++            MouseFilter = MouseFilterMode.Ignore,
++            HorizontalExpand = true,
++            VerticalExpand = true
++        };
++        AddChild(_topUtilityContainer);
++
++        _escButton = CreateUtilityButton("ESC", Keyboard.Key.Escape, id: "esc");
++        _keybButton = CreateUtilityButton("KEYB", null, PojavSpecialAction.KeyboardToggle, id: "keyb");
++        
++        _editButton = CreateUtilityButton("EDIT", null, PojavSpecialAction.Custom, id: "edit");
++        _editButton.OnPressed = ToggleEditMode;
++
++        _hideButton = CreateUtilityButton("HIDE", null, PojavSpecialAction.Custom, id: "hide");
++        _hideButton.OnPressed = ToggleControlsVisibility;
++
++        AddChild(_modalOverlay);
++
++        _dialogPanel.PanelOverride = new StyleBoxFlat
++        {
++            BackgroundColor = new Color(18, 22, 32, 245),
++            BorderColor = new Color(255, 215, 0, 240),
++            BorderThickness = new Thickness(2)
++        };
++        _modalOverlay.AddChild(_dialogPanel);
++
++        var dialogContent = new BoxContainer
++        {
++            Orientation = BoxContainer.LayoutOrientation.Vertical,
++            SeparationOverride = 8,
++            Margin = new Thickness(14, 12)
++        };
++        _dialogPanel.AddChild(dialogContent);
++        dialogContent.AddChild(_dialogTitle);
++
++        var nameRow = new BoxContainer
++        {
++            Orientation = BoxContainer.LayoutOrientation.Horizontal,
++            SeparationOverride = 8
++        };
++        nameRow.AddChild(new Label { Text = "Button Label:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
++        nameRow.AddChild(_dialogNameInput);
++        dialogContent.AddChild(nameRow);
++
++        dialogContent.AddChild(new Label { Text = "Quick Key Preset:", FontColorOverride = new Color(200, 200, 200) });
++        var quickRow1 = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal, SeparationOverride = 6 };
++        string[] row1Keys = ["E", "Z", "Q", "V", "X", "R", "F", "C", "Space"];
++        foreach (var k in row1Keys)
++        {
++            var btn = new Button { Text = k, MinSize = new Vector2(36, 28) };
++            var keyVal = k;
++            btn.OnPressed += _ => SetDialogKey(keyVal);
++            quickRow1.AddChild(btn);
++        }
++        dialogContent.AddChild(quickRow1);
++
++        var quickRow2 = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Horizontal, SeparationOverride = 6 };
++        string[] row2Keys = ["Shift", "Control", "Alt", "U", "Y", "G", "T", "1", "2", "3", "Return"];
++        foreach (var k in row2Keys)
++        {
++            var btn = new Button { Text = k, MinSize = new Vector2(36, 28) };
++            var keyVal = k;
++            btn.OnPressed += _ => SetDialogKey(keyVal);
++            quickRow2.AddChild(btn);
++        }
++        dialogContent.AddChild(quickRow2);
++
++        var keyRow = new BoxContainer
++        {
++            Orientation = BoxContainer.LayoutOrientation.Horizontal,
++            SeparationOverride = 8
++        };
++        keyRow.AddChild(new Label { Text = "Key Code:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
++        keyRow.AddChild(_dialogKeyInput);
++        dialogContent.AddChild(keyRow);
++
++        var sizeRow = new BoxContainer
++        {
++            Orientation = BoxContainer.LayoutOrientation.Horizontal,
++            SeparationOverride = 8
++        };
++        sizeRow.AddChild(new Label { Text = "Button Size:", MinSize = new Vector2(100, 0), VerticalAlignment = VAlignment.Center });
++        var sizeMinus = new Button { Text = " - ", MinSize = new Vector2(36, 28) };
++        sizeMinus.OnPressed += _ =>
++        {
++            _dialogButtonSize = Math.Clamp(_dialogButtonSize - 6f, 32f, 96f);
++            _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
++        };
++        sizeRow.AddChild(sizeMinus);
++        sizeRow.AddChild(_sizeDisplayLabel);
++
++        var sizePlus = new Button { Text = " + ", MinSize = new Vector2(36, 28) };
++        sizePlus.OnPressed += _ =>
++        {
++            _dialogButtonSize = Math.Clamp(_dialogButtonSize + 6f, 32f, 96f);
++            _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
++        };
++        sizeRow.AddChild(sizePlus);
++        dialogContent.AddChild(sizeRow);
++
++        var actionsRow = new BoxContainer
++        {
++            Orientation = BoxContainer.LayoutOrientation.Horizontal,
++            SeparationOverride = 10,
++            HorizontalAlignment = HAlignment.Right
++        };
++        dialogContent.AddChild(actionsRow);
++
++        _deleteBtn.OnPressed += _ => DeleteCurrentButton();
++        actionsRow.AddChild(_deleteBtn);
++
++        _cancelBtn.OnPressed += _ => CloseModalDialog();
++        actionsRow.AddChild(_cancelBtn);
++
++        _saveBtn.OnPressed += _ => SaveButtonFromDialog();
++        actionsRow.AddChild(_saveBtn);
++
++        LoadSavedLayout();
++        UpdateStyling();
++        DumpMobileDebugInfo();
++    }
++
++    private PojavActionButton CreateButton(
++        string text,
++        Keyboard.Key? actionKey = null,
++        PojavSpecialAction special = PojavSpecialAction.None,
++        string id = "",
++        bool isCustom = false,
++        Color? accent = null,
++        bool isToggle = false)
++    {
++        var btn = new PojavActionButton(text, actionKey, special, id, isCustom)
++        {
++            AccentColor = accent ?? new Color(210, 210, 210),
++            IsToggle = isToggle
++        };
++        btn.OnPositionChanged += SaveLayout;
++        btn.OnConfigureRequested += OpenConfigureButtonDialog;
++        _allButtons.Add(btn);
++        _clusterContainer.AddChild(btn);
++        return btn;
++    }
++
++    private PojavActionButton CreateUtilityButton(string text, Keyboard.Key? actionKey = null, PojavSpecialAction special = PojavSpecialAction.None, string id = "")
++    {
++        var btn = new PojavActionButton(text, actionKey, special, id, isCustom: false);
++        _topUtilityContainer.AddChild(btn);
++        return btn;
++    }
++
++    private void SetDialogKey(string keyName)
++    {
++        _dialogKeyInput.Text = keyName;
++        if (string.IsNullOrWhiteSpace(_dialogNameInput.Text) || _dialogNameInput.Text == _lastSelectedQuickKey)
++        {
++            _dialogNameInput.Text = keyName.ToUpperInvariant();
++        }
++        _lastSelectedQuickKey = keyName;
++    }
++
++    private void OpenAddButtonDialog()
++    {
++        _currentEditingButton = null;
++        _dialogTitle.Text = "ADD NEW BUTTON";
++        _dialogTitle.FontColorOverride = new Color(255, 215, 0);
++
++        _dialogNameInput.Text = "E";
++        _dialogKeyInput.Text = "E";
++        _lastSelectedQuickKey = "E";
++        _dialogButtonSize = 52f;
++        _sizeDisplayLabel.Text = "52 px";
++
++        _saveBtn.Text = "CREATE";
++        _deleteBtn.Visible = false;
++
++        _modalOverlay.Visible = true;
++    }
++
++    private void OpenConfigureButtonDialog(PojavActionButton btn)
++    {
++        _currentEditingButton = btn;
++        _dialogTitle.Text = $"BUTTON SETTINGS: {btn.Text}";
++        _dialogTitle.FontColorOverride = new Color(255, 230, 100);
++
++        _dialogNameInput.Text = btn.Text;
++        _dialogKeyInput.Text = btn.ActionKey?.ToString() ?? (btn.SpecialAction != PojavSpecialAction.None ? btn.SpecialAction.ToString() : "");
++        _lastSelectedQuickKey = "";
++        _dialogButtonSize = btn.CustomSize ?? 50f;
++        _sizeDisplayLabel.Text = $"{_dialogButtonSize:F0} px";
++
++        _saveBtn.Text = "SAVE";
++        _deleteBtn.Visible = true;
++
++        _modalOverlay.Visible = true;
++    }
++
++    private void CloseModalDialog()
++    {
++        _modalOverlay.Visible = false;
++        _currentEditingButton = null;
++    }
++
++    private void SaveButtonFromDialog()
++    {
++        var name = string.IsNullOrWhiteSpace(_dialogNameInput.Text) ? "BTN" : _dialogNameInput.Text.Trim();
++        var keyText = _dialogKeyInput.Text.Trim();
++
++        Keyboard.Key? key = null;
++        if (Enum.TryParse<Keyboard.Key>(keyText, true, out var parsedKey))
++        {
++            key = parsedKey;
++        }
++
++        if (_currentEditingButton == null)
++        {
++            var id = $"custom_{Guid.NewGuid().ToString()[..6]}";
++            var newBtn = CreateButton(name, key, PojavSpecialAction.None, id, isCustom: true);
++            newBtn.IsEditMode = IsEditMode;
++            newBtn.CustomSize = _dialogButtonSize;
++
++            var center = (Size.X > 0 && Size.Y > 0) ? Size / 2f : new Vector2(400, 300);
++            newBtn.CustomPosition = center;
++        }
++        else
++        {
++            _currentEditingButton.Text = name;
++            if (key.HasValue)
++            {
++                _currentEditingButton.ActionKey = key.Value;
++            }
++            _currentEditingButton.CustomSize = _dialogButtonSize;
++        }
++
++        CloseModalDialog();
++        SaveLayout();
++        InvalidateArrange();
++    }
++
++    private void DeleteCurrentButton()
++    {
++        if (_currentEditingButton == null)
++            return;
++
++        var btn = _currentEditingButton;
++        if (btn == _editButton || btn == _hideButton || btn == _escButton || btn == _keybButton)
++            return;
++
++        _deletedButtonIds.Add(btn.Id);
++        _allButtons.Remove(btn);
++        _clusterContainer.RemoveChild(btn);
++
++        CloseModalDialog();
++        SaveLayout();
++        InvalidateArrange();
++    }
++
++    public void StartDragging(Control control, Vector2 touchOffsetInControl, Vector2 initialGlobalPos)
++    {
++        if (!IsEditMode)
++            return;
++
++        _currentlyDraggingControl = control;
++        _dragStartPos = initialGlobalPos;
++        _dragTouchOffset = touchOffsetInControl;
++        _hasDraggedCurrent = false;
++    }
++
++    protected internal override void MouseMove(GUIMouseMoveEventArgs args)
++    {
++        base.MouseMove(args);
++
++        if (IsEditMode && _currentlyDraggingControl != null && _dragTouchOffset != null)
++        {
++            var delta = args.GlobalPosition - _dragStartPos;
++            if (delta.LengthSquared() > 16f)
++            {
++                _hasDraggedCurrent = true;
++            }
++
++            var parentGlobal = _clusterContainer.GlobalPosition;
++            var newGlobal = args.GlobalPosition - _dragTouchOffset.Value;
++            var newLocal = newGlobal - parentGlobal;
++
++            if (_currentlyDraggingControl is PojavActionButton btn)
++            {
++                btn.CustomPosition = newLocal;
++                btn.Arrange(new UIBox2(newLocal, newLocal + btn.Size));
++            }
++            else if (_currentlyDraggingControl is VirtualThumbstick stick)
++            {
++                stick.CustomPosition = newLocal;
++                stick.Arrange(new UIBox2(newLocal, newLocal + stick.Size));
++            }
++
++            SaveLayout();
++        }
++    }
++
++    protected internal override void KeyBindUp(GUIBoundKeyEventArgs args)
++    {
++        base.KeyBindUp(args);
++
++        if (args.Function == EngineKeyFunctions.UIClick)
++        {
++            if (IsEditMode && _currentlyDraggingControl != null)
++            {
++                var dragged = _currentlyDraggingControl;
++                var wasDragged = _hasDraggedCurrent;
++                _currentlyDraggingControl = null;
++                _dragTouchOffset = null;
++                SaveLayout();
++                InvalidateArrange();
++
++                if (!wasDragged && dragged is PojavActionButton btn)
++                {
++                    OpenConfigureButtonDialog(btn);
++                }
++                args.Handle();
++                return;
++            }
++        }
++    }
++
++    private void ToggleEditMode()
++    {
++        IsEditMode = !IsEditMode;
++        System.Console.WriteLine($"[MobileEdit] ToggleEditMode now={IsEditMode} buttons={_allButtons.Count}");
++        MouseFilter = IsEditMode ? MouseFilterMode.Stop : MouseFilterMode.Ignore;
++        _editorBarContainer.Visible = IsEditMode;
++        _editButton.Text = IsEditMode ? "DONE" : "EDIT";
++
++        _thumbstick.IsEditMode = IsEditMode;
++        foreach (var btn in _allButtons)
++        {
++            btn.IsEditMode = IsEditMode;
++        }
++
++        if (!IsEditMode)
++        {
++            _currentlyDraggingControl = null;
++            _dragTouchOffset = null;
++            CloseModalDialog();
++            SaveLayout();
++        }
++
++        InvalidateArrange();
++    }
++
++    private void AdjustScale(float delta)
++    {
++        var current = _cfg.GetCVar(CVars.MobileControlsScale);
++        var updated = Math.Clamp(current + delta, 0.6f, 3.0f);
++        _cfg.SetCVar(CVars.MobileControlsScale, updated);
++        UpdateStyling();
++        InvalidateArrange();
++    }
++
++    private void ResetToDefaultLayout()
++    {
++        _cfg.SetCVar(CVars.MobileControlsLayout, string.Empty);
++        _savedPositions.Clear();
++        _savedSizes.Clear();
++        _deletedButtonIds.Clear();
++
++        for (int i = _allButtons.Count - 1; i >= 0; i--)
++        {
++            var btn = _allButtons[i];
++            if (btn.IsCustom)
++            {
++                _allButtons.RemoveAt(i);
++                _clusterContainer.RemoveChild(btn);
++            }
++        }
++
++        foreach (var defBtn in _defaultButtons)
++        {
++            if (!_allButtons.Contains(defBtn))
++            {
++                _allButtons.Add(defBtn);
++                _clusterContainer.AddChild(defBtn);
++            }
++            defBtn.CustomPosition = null;
++            defBtn.CustomSize = null;
++            defBtn.IsEditMode = IsEditMode;
++        }
++
++        _thumbstick.CustomPosition = null;
++        InvalidateArrange();
++    }
++
++    private void ToggleControlsVisibility()
++    {
++        _controlsHidden = !_controlsHidden;
++        _clusterContainer.Visible = !_controlsHidden;
++        _editButton.Visible = !_controlsHidden;
++        _hideButton.Text = _controlsHidden ? "SHOW" : "HIDE";
++
++        if (_controlsHidden)
++        {
++            _thumbstick.ReleaseStick();
++            foreach (var btn in _allButtons)
++            {
++                btn.Release();
++            }
++        }
++    }
++
++    public bool HandleTouch(TouchFingerEventArgs args)
++    {
++        if (!VisibleInTree)
++            return false;
++
++        if (_modalOverlay.Visible || IsEditMode)
++            return false;
++
++        switch (args.Action)
++        {
++            case TouchFingerAction.Down:
++            {
++                var stickPos = args.Coordinates.Position / _thumbstick.UIScale - _thumbstick.GlobalPosition;
++                if (_thumbstick.VisibleInTree && _thumbstick.HasPoint(stickPos))
++                {
++                    _claimedTouches[args.FingerId] = _thumbstick;
++                    _thumbstick.OnTouchDown(args.FingerId, stickPos);
++                    return true;
++                }
++
++                for (int i = _allButtons.Count - 1; i >= 0; i--)
++                {
++                    var btn = _allButtons[i];
++                    var btnPos = args.Coordinates.Position / btn.UIScale - btn.GlobalPosition;
++                    if (btn.VisibleInTree && btn.HasPoint(btnPos))
++                    {
++                        _claimedTouches[args.FingerId] = btn;
++                        btn.OnTouchDown(args.FingerId);
++                        return true;
++                    }
++                }
++
++                PojavActionButton[] topBtns = [_editButton, _hideButton, _escButton, _keybButton];
++                foreach (var btn in topBtns)
++                {
++                    var btnPos = args.Coordinates.Position / btn.UIScale - btn.GlobalPosition;
++                    if (btn.VisibleInTree && btn.HasPoint(btnPos))
++                    {
++                        _claimedTouches[args.FingerId] = btn;
++                        btn.OnTouchDown(args.FingerId);
++                        return true;
++                    }
++                }
++
++                return false;
++            }
++
++            case TouchFingerAction.Motion:
++            {
++                if (_claimedTouches.TryGetValue(args.FingerId, out var target))
++                {
++                    if (target is VirtualThumbstick stick)
++                    {
++                        var stickPos = args.Coordinates.Position / stick.UIScale - stick.GlobalPosition;
++                        stick.OnTouchMove(args.FingerId, stickPos);
++                    }
++                    return true;
++                }
++                return false;
++            }
++
++            case TouchFingerAction.Up:
++            case TouchFingerAction.Cancel:
++            {
++                if (_claimedTouches.Remove(args.FingerId, out var target))
++                {
++                    if (target is VirtualThumbstick stick)
++                    {
++                        stick.OnTouchUp(args.FingerId);
++                    }
++                    else if (target is PojavActionButton btn)
++                    {
++                        btn.OnTouchUp(args.FingerId);
++                    }
++                    return true;
++                }
++                return false;
++            }
++        }
++
++        return false;
++    }
++
++    public void UpdateStyling()
++    {
++        var opacity = Math.Clamp(_cfg.GetCVar(CVars.MobileControlsOpacity), 0.2f, 1.0f);
++        Modulate = new Color(1f, 1f, 1f, opacity);
++
++        var enabled = _cfg.GetCVar(CVars.MobileTouchControls);
++        Visible = enabled;
++    }
++
++    private void LoadSavedLayout()
++    {
++        var serialized = _cfg.GetCVar(CVars.MobileControlsLayout);
++        if (string.IsNullOrWhiteSpace(serialized))
++            return;
++
++        var entries = serialized.Split(';', StringSplitOptions.RemoveEmptyEntries);
++        foreach (var entry in entries)
++        {
++            var parts = entry.Split(':');
++            if (parts.Length < 2) continue;
++
++            if (parts[0] == "stick" && parts.Length >= 2)
++            {
++                var coords = parts[1].Split(',');
++                if (coords.Length == 2 &&
++                    float.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var sx) &&
++                    float.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var sy))
++                {
++                    _thumbstick.CustomPosition = new Vector2(sx, sy);
++                }
++                continue;
++            }
++
++            if (parts[0] == "del" && parts.Length >= 2)
++            {
++                var delId = parts[1];
++                if (delId != "edit" && delId != "hide" && delId != "esc" && delId != "keyb")
++                {
++                    _deletedButtonIds.Add(delId);
++                }
++                continue;
++            }
++
++            if (parts[0] == "custom" && parts.Length >= 5)
++            {
++                var id = parts[1];
++                var text = parts[2];
++                Keyboard.Key? key = Enum.TryParse<Keyboard.Key>(parts[3], true, out var parsedKey) ? parsedKey : null;
++                var coords = parts[4].Split(',');
++                if (coords.Length == 2 &&
++                    float.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var cx) &&
++                    float.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var cy))
++                {
++                    float? cSize = null;
++                    if (parts.Length >= 6 && float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var ps))
++                    {
++                        cSize = ps;
++                    }
++                    var customBtn = CreateButton(text, key, PojavSpecialAction.None, id, isCustom: true);
++                    customBtn.CustomPosition = new Vector2(cx, cy);
++                    customBtn.CustomSize = cSize;
++                }
++                continue;
++            }
++
++            if (parts[0] == "btn" && parts.Length >= 5)
++            {
++                var id = parts[1];
++                var text = parts[2];
++                Keyboard.Key? key = Enum.TryParse<Keyboard.Key>(parts[3], true, out var parsedKey) ? parsedKey : null;
++                var coords = parts[4].Split(',');
++                float? cSize = null;
++                if (parts.Length >= 6 && float.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var ps))
++                {
++                    cSize = ps;
++                }
++
++                var existing = _allButtons.Find(b => b.Id == id);
++                if (existing != null)
++                {
++                    if (!string.IsNullOrWhiteSpace(text)) existing.Text = text;
++                    if (key.HasValue) existing.ActionKey = key.Value;
++                    if (coords.Length == 2 &&
++                        float.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var bx) &&
++                        float.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var by))
++                    {
++                        existing.CustomPosition = new Vector2(bx, by);
++                    }
++                    if (cSize.HasValue) existing.CustomSize = cSize;
++                }
++                continue;
++            }
++
++            var btnId = parts[0];
++            var bCoords = parts[1].Split(',');
++            if (bCoords.Length == 2 &&
++                float.TryParse(bCoords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var obx) &&
++                float.TryParse(bCoords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var oby))
++            {
++                _savedPositions[btnId] = new Vector2(obx, oby);
++                if (parts.Length >= 3 && float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var bs))
++                {
++                    _savedSizes[btnId] = bs;
++                }
++            }
++        }
++
++        _deletedButtonIds.Remove("edit");
++        _deletedButtonIds.Remove("hide");
++        _deletedButtonIds.Remove("esc");
++        _deletedButtonIds.Remove("keyb");
++
++        for (int i = _allButtons.Count - 1; i >= 0; i--)
++        {
++            var btn = _allButtons[i];
++            if (_deletedButtonIds.Contains(btn.Id))
++            {
++                _allButtons.RemoveAt(i);
++                _clusterContainer.RemoveChild(btn);
++            }
++        }
++
++        foreach (var btn in _allButtons)
++        {
++            if (_savedPositions.TryGetValue(btn.Id, out var pos))
++                btn.CustomPosition = pos;
++            if (_savedSizes.TryGetValue(btn.Id, out var size))
++                btn.CustomSize = size;
++        }
++    }
++
++    private void SaveLayout()
++    {
++        var parts = new List<string>();
++
++        if (_thumbstick.CustomPosition.HasValue)
++        {
++            var p = _thumbstick.CustomPosition.Value;
++            parts.Add($"stick:{p.X.ToString("F1", CultureInfo.InvariantCulture)},{p.Y.ToString("F1", CultureInfo.InvariantCulture)}");
++        }
++
++        foreach (var delId in _deletedButtonIds)
++        {
++            if (delId == "edit" || delId == "hide" || delId == "esc" || delId == "keyb")
++                continue;
++            parts.Add($"del:{delId}");
++        }
++
++        foreach (var btn in _allButtons)
++        {
++            if (btn == _editButton || btn == _hideButton || btn == _escButton || btn == _keybButton)
++                continue;
++
++            var posX = btn.CustomPosition?.X ?? btn.DefaultPosition.X;
++            var posY = btn.CustomPosition?.Y ?? btn.DefaultPosition.Y;
++            var sizeStr = btn.CustomSize.HasValue ? $":{btn.CustomSize.Value.ToString("F0", CultureInfo.InvariantCulture)}" : "";
++
++            if (btn.IsCustom)
++            {
++                var keyStr = btn.ActionKey?.ToString() ?? "None";
++                parts.Add($"custom:{btn.Id}:{btn.Text}:{keyStr}:{posX.ToString("F1", CultureInfo.InvariantCulture)},{posY.ToString("F1", CultureInfo.InvariantCulture)}{sizeStr}");
++            }
++            else
++            {
++                var keyStr = btn.ActionKey?.ToString() ?? (btn.SpecialAction != PojavSpecialAction.None ? btn.SpecialAction.ToString() : "None");
++                parts.Add($"btn:{btn.Id}:{btn.Text}:{keyStr}:{posX.ToString("F1", CultureInfo.InvariantCulture)},{posY.ToString("F1", CultureInfo.InvariantCulture)}{sizeStr}");
++            }
++        }
++
++        var serialized = string.Join(";", parts);
++        _cfg.SetCVar(CVars.MobileControlsLayout, serialized);
++        DumpMobileDebugInfo();
++    }
++
++    private void DumpArrangeDebugInfo(Vector2 viewport, float scale)
++    {
++        try
++        {
++            var dir = ProgramShared.PathOffset;
++            if (string.IsNullOrEmpty(dir))
++                return;
++            var sb = new System.Text.StringBuilder();
++            sb.AppendLine($"utc={DateTime.UtcNow:O}");
++            sb.AppendLine($"viewport={viewport} controls_scale={scale.ToString(CultureInfo.InvariantCulture)}");
++            sb.AppendLine($"stick pos={_thumbstick.GlobalPosition} size={_thumbstick.Size} custom={_thumbstick.CustomPosition?.ToString() ?? "<none>"}");
++            foreach (var b in _allButtons)
++            {
++                sb.AppendLine($"btn {b.Id} pos={b.GlobalPosition} size={b.Size} custom={b.CustomPosition?.ToString() ?? "<none>"} label=\"{b.Text}\" edit={b.IsEditMode}");
++            }
++            File.WriteAllText(Path.Combine(dir, "mobile-arrange-debug.txt"), sb.ToString());
++        }
++        catch { }
++    }
++
++    /// <summary>
++    /// Writes current touch-control state where the launcher crash reporter
++    /// can pick it up (separate process, same files dir). Proves the overlay
++    /// constructed and shows exact positions/scales.
++    /// </summary>
++    private void DumpMobileDebugInfo()
++    {
++        try
++        {
++            var dir = ProgramShared.PathOffset;
++            if (string.IsNullOrEmpty(dir))
++                return;
++            var sb = new System.Text.StringBuilder();
++            sb.AppendLine($"utc={DateTime.UtcNow:O}");
++            sb.AppendLine($"overlay_constructed=true");
++            sb.AppendLine($"mobile.touch_controls={_cfg.GetCVar(CVars.MobileTouchControls)}");
++            sb.AppendLine($"mobile.controls_scale={_cfg.GetCVar(CVars.MobileControlsScale).ToString(CultureInfo.InvariantCulture)}");
++            sb.AppendLine($"mobile.controls_opacity={_cfg.GetCVar(CVars.MobileControlsOpacity).ToString(CultureInfo.InvariantCulture)}");
++            sb.AppendLine($"mobile.controls_layout={_cfg.GetCVar(CVars.MobileControlsLayout)}");
++            sb.AppendLine($"display.uiScale={_cfg.GetCVar(CVars.DisplayUIScale).ToString(CultureInfo.InvariantCulture)}");
++            sb.AppendLine($"stick_default={_thumbstick.DefaultPosition} stick_custom={_thumbstick.CustomPosition?.ToString() ?? "<none>"}");
++            sb.AppendLine($"stick_size={_thumbstick.Size} overlay_size={Size} overlay_visible={Visible}");
++            File.WriteAllText(Path.Combine(dir, "mobile-controls-debug.txt"), sb.ToString());
++        }
++        catch { }
++    }
++
++    private void ArrangeChild(Control control, Vector2 defaultPos, Vector2 defaultSize, Vector2 viewport)
++    {
++        Vector2 pos;
++        Vector2 size = defaultSize;
++
++        if (control is PojavActionButton btn)
++        {
++            btn.DefaultPosition = defaultPos;
++            if (btn.CustomPosition.HasValue)
++            {
++                var cp = btn.CustomPosition.Value;
++                if (cp.X < -50f || cp.Y < -50f || cp.X > 4000f || cp.Y > 4000f)
++                {
++                    btn.CustomPosition = null;
++                }
++            }
++            pos = btn.CustomPosition ?? defaultPos;
++            if (btn.CustomSize.HasValue)
++            {
++                var s = btn.CustomSize.Value;
++                size = new Vector2(s, s);
++            }
++        }
++        else if (control is VirtualThumbstick stick)
++        {
++            stick.DefaultPosition = defaultPos;
++            if (stick.CustomPosition.HasValue)
++            {
++                var cp = stick.CustomPosition.Value;
++                if (cp.X < -50f || cp.Y < -50f || cp.X > 4000f || cp.Y > 4000f)
++                {
++                    stick.CustomPosition = null;
++                }
++            }
++            pos = stick.CustomPosition ?? defaultPos;
++        }
++        else
++        {
++            pos = defaultPos;
++        }
++
++        // Mobile: never arrange off-screen (stale saved coords from another
++        // orientation, or a foreign layout format, used to lose controls).
++        var maxPos = viewport - size;
++        if (maxPos.X < 0f) maxPos.X = 0f;
++        if (maxPos.Y < 0f) maxPos.Y = 0f;
++        pos = new Vector2(Math.Clamp(pos.X, 0f, maxPos.X), Math.Clamp(pos.Y, 0f, maxPos.Y));
++
++        control.Arrange(new UIBox2(pos, pos + size));
++    }
++
++    protected override Vector2 ArrangeOverride(Vector2 finalSize)
++    {
++        _clusterContainer.Arrange(new UIBox2(Vector2.Zero, finalSize));
++        _topUtilityContainer.Arrange(new UIBox2(Vector2.Zero, finalSize));
++
++        var scale = Math.Clamp(_cfg.GetCVar(CVars.MobileControlsScale), 0.6f, 3.0f);
++        var stickScale = Math.Clamp(_cfg.GetCVar(CVars.MobileThumbstickScale), 0.5f, 2.0f);
++
++        var stickRadius = 75f * scale * stickScale;
++        var stickDiameter = stickRadius * 2f;
++        var stickMarginX = 35f * scale;
++
++        _thumbstick.Radius = stickRadius;
++        _thumbstick.KnobRadius = 32f * scale * stickScale;
++        _thumbstick.Deadzone = 10f * scale * stickScale;
++
++        var stickCenterY = finalSize.Y * 0.66f;
++        var defaultStickY = stickCenterY - stickRadius;
++        var defaultStickPos = new Vector2(stickMarginX, defaultStickY);
++        var stickSize = new Vector2(stickDiameter + 20f, stickDiameter + 20f);
++        ArrangeChild(_thumbstick, defaultStickPos, stickSize, finalSize);
++
++        var useSize = 54f * scale;
++        var useDefPos = new Vector2(finalSize.X - useSize - 24f * scale, finalSize.Y * 0.54f);
++        ArrangeChild(_useButton, useDefPos, new Vector2(useSize, useSize), finalSize);
++
++        var interSize = 48f * scale;
++        var interDefPos = new Vector2(useDefPos.X - interSize - 16f * scale, useDefPos.Y + 14f * scale);
++        ArrangeChild(_interactButton, interDefPos, new Vector2(interSize, interSize), finalSize);
++
++        var secSize = 46f * scale;
++        var secDefPos = new Vector2(interDefPos.X - secSize - 14f * scale, interDefPos.Y + 12f * scale);
++        ArrangeChild(_secButton, secDefPos, new Vector2(secSize, secSize), finalSize);
++
++        var handSize = 44f * scale;
++        var handDefPos = new Vector2(useDefPos.X + 4f * scale, useDefPos.Y - handSize - 16f * scale);
++        ArrangeChild(_handButton, handDefPos, new Vector2(handSize, handSize), finalSize);
++
++        var dropSize = 42f * scale;
++        var dropDefPos = new Vector2(interDefPos.X - 2f * scale, interDefPos.Y - dropSize - 18f * scale);
++        ArrangeChild(_dropButton, dropDefPos, new Vector2(dropSize, dropSize), finalSize);
++
++        var altSize = 42f * scale;
++        var altDefPos = new Vector2(secDefPos.X, secDefPos.Y - altSize - 16f * scale);
++        ArrangeChild(_altButton, altDefPos, new Vector2(altSize, altSize), finalSize);
++
++        var examSize = 42f * scale;
++        var examDefPos = new Vector2(dropDefPos.X, dropDefPos.Y - examSize - 14f * scale);
++        ArrangeChild(_examButton, examDefPos, new Vector2(examSize, examSize), finalSize);
++
++        var pullSize = 42f * scale;
++        var pullDefPos = new Vector2(altDefPos.X, altDefPos.Y - pullSize - 14f * scale);
++        ArrangeChild(_pullButton, pullDefPos, new Vector2(pullSize, pullSize), finalSize);
++
++        var bagSize = 44f * scale;
++        var bagDefPos = new Vector2(handDefPos.X, handDefPos.Y - bagSize - 16f * scale);
++        ArrangeChild(_bagButton, bagDefPos, new Vector2(bagSize, bagSize), finalSize);
++
++        var throwSize = 42f * scale;
++        var throwDefPos = new Vector2(examDefPos.X, examDefPos.Y - throwSize - 14f * scale);
++        ArrangeChild(_throwButton, throwDefPos, new Vector2(throwSize, throwSize), finalSize);
++
++        foreach (var btn in _allButtons)
++        {
++            if (btn.IsCustom)
++            {
++                var defSize = new Vector2(50f * scale, 50f * scale);
++                var defPos = new Vector2(finalSize.X / 2f - 25f, finalSize.Y / 2f - 25f);
++                ArrangeChild(btn, defPos, defSize, finalSize);
++            }
++        }
++
++        var topBtnW = 46f * scale;
++        var topBtnH = 34f * scale;
++        var topY = 14f * scale;
++
++        ArrangeChild(_escButton, new Vector2(24f * scale, topY), new Vector2(topBtnW, topBtnH), finalSize);
++        ArrangeChild(_editButton, new Vector2(24f * scale + topBtnW + 12f * scale, topY), new Vector2(topBtnW + 8f * scale, topBtnH), finalSize);
++
++        var keybX = finalSize.X - topBtnW - (24f * scale);
++        ArrangeChild(_keybButton, new Vector2(keybX, topY), new Vector2(topBtnW, topBtnH), finalSize);
++
++        var hideW = 48f * scale;
++        var hideH = 28f * scale;
++        var hideX = (finalSize.X - hideW) / 2f;
++        ArrangeChild(_hideButton, new Vector2(hideX, 6f * scale), new Vector2(hideW, hideH), finalSize);
++
++        if (_editorBarContainer.Visible)
++        {
++            var barW = MathF.Min(finalSize.X - 260f * scale, 750f);
++            var barH = 50f;
++            var barX = (finalSize.X - barW) / 2f;
++            _editorBarContainer.Arrange(new UIBox2(barX, 10f, barX + barW, 10f + barH));
++        }
++
++        if (_modalOverlay.Visible)
++        {
++            _modalOverlay.Arrange(new UIBox2(Vector2.Zero, finalSize));
++            var dialogW = MathF.Min(finalSize.X - 40f, 520f);
++            var dialogH = MathF.Min(finalSize.Y - 30f, 320f);
++            var dialogX = (finalSize.X - dialogW) / 2f;
++            var dialogY = (finalSize.Y - dialogH) / 2f;
++            _dialogPanel.Arrange(new UIBox2(dialogX, dialogY, dialogX + dialogW, dialogY + dialogH));
++        }
++
++        DumpArrangeDebugInfo(finalSize, Math.Clamp(_cfg.GetCVar(CVars.MobileControlsScale), 0.6f, 3.0f));
++
++        return finalSize;
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/PojavActionButton.cs b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
+new file mode 100644
+index 0000000..4f00e0a
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/PojavActionButton.cs
+@@ -0,0 +1,370 @@
++using System;
++using System.Numerics;
++using Robust.Client.Graphics;
++using Robust.Client.Input;
++using Robust.Client.UserInterface;
++using Robust.Client.UserInterface.Controls;
++using Robust.Shared.Input;
++using Robust.Shared.IoC;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++public enum PojavSpecialAction
++{
++    None,
++    Primary,
++    Secondary,
++    KeyboardToggle,
++    Throw,
++    Custom
++}
++
++public sealed partial class PojavActionButton : Control
++{
++    [Dependency] private readonly IInputManager _inputManager = default!;
++    [Dependency] private readonly IClyde _clyde = default!;
++
++    public string Id { get; set; } = string.Empty;
++    public Vector2 DefaultPosition { get; set; }
++    public Vector2? CustomPosition { get; set; }
++    public float? CustomSize { get; set; }
++    public bool IsCustom { get; set; }
++    public bool IsEditMode { get; set; }
++    public event Action? OnPositionChanged;
++    public event Action<PojavActionButton>? OnConfigureRequested;
++
++    public string Text
++    {
++        get => _label.Text ?? string.Empty;
++        set => _label.Text = value;
++    }
++
++    public Color AccentColor { get; set; } = new Color(210, 210, 210);
++    public bool IsToggle { get; set; }
++    public bool IsToggled { get; set; }
++
++    public Keyboard.Key? ActionKey { get; set; }
++    public PojavSpecialAction SpecialAction { get; set; } = PojavSpecialAction.None;
++    public Action? OnPressed { get; set; }
++    public Action? OnReleased { get; set; }
++
++    public void ResetToggle()
++    {
++        if (IsToggle && IsToggled)
++        {
++            IsToggled = false;
++            _isPressed = false;
++            ExecuteUp();
++            OnReleased?.Invoke();
++        }
++    }
++
++    private readonly Label _label;
++    private bool _isPressed;
++    private Vector2? _dragTouchOffset;
++    private Vector2 _pressStartGlobal;
++    private bool _hasDragged;
++    private static bool _keyboardActive;
++
++    public PojavActionButton(string text, Keyboard.Key? actionKey = null, PojavSpecialAction special = PojavSpecialAction.None, string id = "", bool isCustom = false)
++    {
++        IoCManager.InjectDependencies(this);
++
++        Id = string.IsNullOrEmpty(id) ? text.ToLowerInvariant() : id;
++        ActionKey = actionKey;
++        SpecialAction = special;
++        IsCustom = isCustom;
++        MouseFilter = MouseFilterMode.Stop;
++
++        _label = new Label
++        {
++            Text = text,
++            HorizontalAlignment = HAlignment.Center,
++            VerticalAlignment = VAlignment.Center,
++            FontColorOverride = Color.White,
++            MouseFilter = MouseFilterMode.Ignore
++        };
++        AddChild(_label);
++    }
++
++    protected override Vector2 ArrangeOverride(Vector2 finalSize)
++    {
++        _label.Arrange(new UIBox2(Vector2.Zero, finalSize));
++        return finalSize;
++    }
++
++    private long? _activeFingerId;
++
++    public void OnTouchDown(long fingerId)
++    {
++        if (IsEditMode)
++            return;
++
++        _activeFingerId = fingerId;
++        if (IsToggle)
++        {
++            IsToggled = !IsToggled;
++            _isPressed = IsToggled;
++            if (IsToggled)
++                ExecuteDown();
++            else
++                ExecuteUp();
++            OnPressed?.Invoke();
++            return;
++        }
++
++        _isPressed = true;
++        ExecuteDown();
++        OnPressed?.Invoke();
++    }
++
++    public void OnTouchUp(long fingerId)
++    {
++        if (IsEditMode || IsToggle)
++            return;
++
++        if (_activeFingerId == fingerId || _isPressed)
++        {
++            _activeFingerId = null;
++            if (_isPressed)
++            {
++                _isPressed = false;
++                ExecuteUp();
++                OnReleased?.Invoke();
++            }
++        }
++    }
++
++    public void Release()
++    {
++        _activeFingerId = null;
++        if (_isPressed && !IsToggle)
++        {
++            _isPressed = false;
++            ExecuteUp();
++            OnReleased?.Invoke();
++        }
++    }
++
++    protected internal override bool HasPoint(Vector2 point)
++    {
++        const float slop = 4f;
++        var size = Size;
++        return point.X >= -slop && point.X <= size.X + slop && point.Y >= -slop && point.Y <= size.Y + slop;
++    }
++
++    protected internal override void ControlFocusExited()
++    {
++        base.ControlFocusExited();
++        if (IsEditMode)
++        {
++            _dragTouchOffset = null;
++        }
++    }
++
++    protected internal override void KeyBindDown(GUIBoundKeyEventArgs args)
++    {
++        base.KeyBindDown(args);
++
++        if (args.Function != EngineKeyFunctions.UIClick)
++            return;
++
++        if (IsEditMode)
++        {
++            UserInterfaceManager.ControlFocused = this;
++            _pressStartGlobal = GlobalPosition + args.RelativePosition;
++            _dragTouchOffset = args.RelativePosition;
++            _hasDragged = false;
++            args.Handle();
++            return;
++        }
++
++        if (_activeFingerId != null)
++        {
++            args.Handle();
++            return;
++        }
++
++        if (IsToggle)
++        {
++            IsToggled = !IsToggled;
++            _isPressed = IsToggled;
++            if (IsToggled)
++                ExecuteDown();
++            else
++                ExecuteUp();
++            OnPressed?.Invoke();
++            args.Handle();
++            return;
++        }
++
++        _isPressed = true;
++        ExecuteDown();
++        OnPressed?.Invoke();
++        args.Handle();
++    }
++
++    protected internal override void MouseMove(GUIMouseMoveEventArgs args)
++    {
++        base.MouseMove(args);
++
++        if (IsEditMode && _dragTouchOffset != null)
++        {
++            var currentGlobal = GlobalPosition + args.RelativePosition;
++            var delta = currentGlobal - _pressStartGlobal;
++            if (delta.LengthSquared() > 36f)
++            {
++                _hasDragged = true;
++            }
++
++            var parentGlobal = Parent?.GlobalPosition ?? Vector2.Zero;
++            var newGlobal = currentGlobal - _dragTouchOffset.Value;
++            var newLocal = newGlobal - parentGlobal;
++            CustomPosition = newLocal;
++            Arrange(new UIBox2(newLocal, newLocal + Size));
++            OnPositionChanged?.Invoke();
++        }
++    }
++
++    protected internal override void KeyBindUp(GUIBoundKeyEventArgs args)
++    {
++        base.KeyBindUp(args);
++
++        if (args.Function != EngineKeyFunctions.UIClick)
++            return;
++
++        if (IsEditMode)
++        {
++            if (UserInterfaceManager.ControlFocused == this)
++                UserInterfaceManager.ControlFocused = null;
++
++            var wasDragged = _hasDragged;
++            _dragTouchOffset = null;
++            OnPositionChanged?.Invoke();
++
++            if (!wasDragged)
++            {
++                OnConfigureRequested?.Invoke(this);
++            }
++
++            args.Handle();
++            return;
++        }
++
++        if (_activeFingerId != null)
++        {
++            args.Handle();
++            return;
++        }
++
++        if (IsToggle)
++        {
++            args.Handle();
++            return;
++        }
++
++        if (!_isPressed)
++            return;
++
++        _isPressed = false;
++        ExecuteUp();
++        OnReleased?.Invoke();
++        args.Handle();
++    }
++
++    private void ExecuteDown()
++    {
++        if (SpecialAction == PojavSpecialAction.KeyboardToggle)
++        {
++            _keyboardActive = !_keyboardActive;
++            if (_keyboardActive)
++                _clyde.MainWindow?.TextInputStart();
++            else
++                _clyde.MainWindow?.TextInputStop();
++            return;
++        }
++
++        if (SpecialAction == PojavSpecialAction.Secondary)
++        {
++            MobileControlsOverlay.IsSecondaryActive = true;
++            return;
++        }
++
++        if (SpecialAction == PojavSpecialAction.Throw)
++        {
++            _inputManager.KeyDown(new KeyEventArgs(Keyboard.Key.Control, false, false, false, false, false, 0));
++            _inputManager.KeyDown(new KeyEventArgs(Keyboard.Key.Q, false, false, false, false, false, 0));
++            return;
++        }
++
++        if (ActionKey.HasValue)
++        {
++            _inputManager.KeyDown(new KeyEventArgs(ActionKey.Value, false, false, false, false, false, 0));
++        }
++    }
++
++    private void ExecuteUp()
++    {
++        if (SpecialAction == PojavSpecialAction.KeyboardToggle)
++            return;
++
++        if (SpecialAction == PojavSpecialAction.Secondary)
++        {
++            MobileControlsOverlay.IsSecondaryActive = false;
++            return;
++        }
++
++        if (SpecialAction == PojavSpecialAction.Throw)
++        {
++            _inputManager.KeyUp(new KeyEventArgs(Keyboard.Key.Q, false, false, false, false, false, 0));
++            _inputManager.KeyUp(new KeyEventArgs(Keyboard.Key.Control, false, false, false, false, false, 0));
++            return;
++        }
++
++        if (ActionKey.HasValue)
++        {
++            _inputManager.KeyUp(new KeyEventArgs(ActionKey.Value, false, false, false, false, false, 0));
++        }
++    }
++
++    protected internal override void Draw(DrawingHandleScreen handle)
++    {
++        base.Draw(handle);
++
++        var center = Size / 2f;
++        var radius = MathF.Min(Size.X, Size.Y) / 2f - 1.5f;
++        var active = _isPressed || IsToggled;
++
++        var bg = active
++            ? new Color(AccentColor.R, AccentColor.G, AccentColor.B, 0.78f)
++            : new Color(18, 22, 32, 0.72f);
++
++        var border = IsEditMode
++            ? new Color(255, 215, 0, 240)
++            : (active ? Color.White : new Color(AccentColor.R, AccentColor.G, AccentColor.B, 0.65f));
++
++        var drawRadius = active ? (radius - 1f) : radius;
++
++        handle.DrawCircle(center, drawRadius, bg, true);
++        handle.DrawCircle(center, drawRadius, border, false);
++
++        if (active)
++        {
++            handle.DrawCircle(center, drawRadius * 0.75f, new Color(255, 255, 255, 40), false);
++        }
++
++        if (IsToggle && IsToggled)
++        {
++            var badgePos = center + new Vector2(radius * 0.6f, -radius * 0.6f);
++            handle.DrawCircle(badgePos, 4f, Color.White, true);
++            handle.DrawCircle(badgePos, 2.5f, new Color(46, 204, 113), true);
++        }
++
++        if (IsEditMode)
++        {
++            var box = UIBox2.FromDimensions(Vector2.Zero, Size);
++            handle.DrawRect(box, new Color(255, 215, 0, 140), false);
++        }
++    }
++}
+diff --git a/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
+new file mode 100644
+index 0000000..cf0d6ed
+--- /dev/null
++++ b/Robust.Client/UserInterface/Mobile/VirtualThumbstick.cs
+@@ -0,0 +1,315 @@
++using System;
++using System.Collections.Generic;
++using System.Numerics;
++using Robust.Client.Graphics;
++using Robust.Client.Input;
++using Robust.Client.UserInterface;
++using Robust.Shared.Input;
++using Robust.Shared.IoC;
++using Robust.Shared.Maths;
++
++namespace Robust.Client.UserInterface.Mobile;
++
++public sealed partial class VirtualThumbstick : Control
++{
++    [Dependency] private readonly IInputManager _inputManager = default!;
++
++    public float Radius { get; set; } = 75f;
++    public float KnobRadius { get; set; } = 32f;
++    public float Deadzone { get; set; } = 10f;
++
++    public Vector2 DefaultPosition { get; set; }
++    public Vector2? CustomPosition { get; set; }
++    public bool IsEditMode { get; set; }
++    public event Action? OnPositionChanged;
++    public event Action? OnStickSteering;
++
++    public bool IsPressed => _isPressed;
++
++    private bool _isPressed;
++    private Vector2 _knobOffset = Vector2.Zero;
++    private Vector2? _dragTouchOffset;
++    private readonly HashSet<Keyboard.Key> _activeKeys = new();
++
++    public VirtualThumbstick()
++    {
++        IoCManager.InjectDependencies(this);
++        MouseFilter = MouseFilterMode.Stop;
++        SetSize = new Vector2(Radius * 2f + 20f, Radius * 2f + 20f);
++    }
++
++    private long? _activeFingerId;
++
++    public void OnTouchDown(long fingerId, Vector2 localPos)
++    {
++        if (IsEditMode)
++            return;
++
++        _activeFingerId = fingerId;
++        _isPressed = true;
++        var offset = localPos - (Size / 2f);
++        UpdateStickOffset(offset);
++    }
++
++    public void OnTouchMove(long fingerId, Vector2 localPos)
++    {
++        if (IsEditMode || !_isPressed || _activeFingerId != fingerId)
++            return;
++
++        var offset = localPos - (Size / 2f);
++        UpdateStickOffset(offset);
++    }
++
++    public void OnTouchUp(long fingerId)
++    {
++        if (_activeFingerId == fingerId)
++        {
++            ReleaseStick();
++        }
++    }
++
++    public void ReleaseStick()
++    {
++        if (!_isPressed)
++            return;
++
++        _activeFingerId = null;
++        _isPressed = false;
++        _knobOffset = Vector2.Zero;
++        if (UserInterfaceManager.ControlFocused == this)
++            UserInterfaceManager.ControlFocused = null;
++        ReleaseAllKeys();
++    }
++
++    protected internal override bool HasPoint(Vector2 point)
++    {
++        var center = Size / 2f;
++        var distSq = (point - center).LengthSquared();
++        var touchRadius = Radius + 25f;
++        return distSq <= touchRadius * touchRadius;
++    }
++
++    protected internal override void ControlFocusExited()
++    {
++        base.ControlFocusExited();
++        if (IsEditMode)
++        {
++            _dragTouchOffset = null;
++        }
++    }
++
++    protected internal override void KeyBindDown(GUIBoundKeyEventArgs args)
++    {
++        base.KeyBindDown(args);
++
++        if (args.Function != EngineKeyFunctions.UIClick)
++            return;
++
++        if (IsEditMode)
++        {
++            UserInterfaceManager.ControlFocused = this;
++            _dragTouchOffset = args.RelativePosition;
++            args.Handle();
++            return;
++        }
++
++        if (_activeFingerId != null)
++        {
++            args.Handle();
++            return;
++        }
++
++        _isPressed = true;
++        var offset = args.RelativePosition - (Size / 2f);
++        UpdateStickOffset(offset);
++        args.Handle();
++    }
++
++    protected internal override void MouseMove(GUIMouseMoveEventArgs args)
++    {
++        base.MouseMove(args);
++
++        if (IsEditMode && _dragTouchOffset != null)
++        {
++            var parentGlobal = Parent?.GlobalPosition ?? Vector2.Zero;
++            var currentGlobal = GlobalPosition + args.RelativePosition;
++            var newGlobal = currentGlobal - _dragTouchOffset.Value;
++            var newLocal = newGlobal - parentGlobal;
++            CustomPosition = newLocal;
++            Arrange(new UIBox2(newLocal, newLocal + Size));
++            OnPositionChanged?.Invoke();
++            return;
++        }
++
++        if (_activeFingerId != null || !_isPressed || IsEditMode)
++            return;
++
++        var offset = args.RelativePosition - (Size / 2f);
++        UpdateStickOffset(offset);
++    }
++
++    protected internal override void KeyBindUp(GUIBoundKeyEventArgs args)
++    {
++        base.KeyBindUp(args);
++
++        if (args.Function != EngineKeyFunctions.UIClick)
++            return;
++
++        if (IsEditMode)
++        {
++            if (UserInterfaceManager.ControlFocused == this)
++                UserInterfaceManager.ControlFocused = null;
++
++            if (_dragTouchOffset != null)
++            {
++                _dragTouchOffset = null;
++                OnPositionChanged?.Invoke();
++            }
++            args.Handle();
++            return;
++        }
++
++        if (_activeFingerId != null)
++        {
++            args.Handle();
++            return;
++        }
++
++        if (!_isPressed)
++            return;
++
++        ReleaseStick();
++        args.Handle();
++    }
++
++    private void UpdateStickOffset(Vector2 rawOffset)
++    {
++        var dist = rawOffset.Length();
++        if (dist < 0.0001f)
++        {
++            _knobOffset = Vector2.Zero;
++            UpdateMovementKeys(Vector2.Zero, 0f);
++            return;
++        }
++
++        var dir = rawOffset / dist;
++        _knobOffset = dir * MathF.Min(dist, Radius);
++
++        if (dist >= Deadzone)
++        {
++            OnStickSteering?.Invoke();
++        }
++
++        UpdateMovementKeys(dir, dist);
++    }
++
++    private void UpdateMovementKeys(Vector2 dir, float dist)
++    {
++        var newKeys = new HashSet<Keyboard.Key>();
++
++        if (dist >= Deadzone)
++        {
++            const float threshold = 0.35f;
++
++            if (dir.Y < -threshold)
++                newKeys.Add(Keyboard.Key.W);
++            else if (dir.Y > threshold)
++                newKeys.Add(Keyboard.Key.S);
++
++            if (dir.X > threshold)
++                newKeys.Add(Keyboard.Key.D);
++            else if (dir.X < -threshold)
++                newKeys.Add(Keyboard.Key.A);
++        }
++
++        foreach (var key in _activeKeys)
++        {
++            if (!newKeys.Contains(key))
++            {
++                _inputManager.KeyUp(new KeyEventArgs(key, false, false, false, false, false, 0));
++            }
++        }
++
++        foreach (var key in newKeys)
++        {
++            if (!_activeKeys.Contains(key))
++            {
++                _inputManager.KeyDown(new KeyEventArgs(key, false, false, false, false, false, 0));
++            }
++        }
++
++        _activeKeys.Clear();
++        _activeKeys.UnionWith(newKeys);
++    }
++
++    private void ReleaseAllKeys()
++    {
++        foreach (var key in _activeKeys)
++        {
++            _inputManager.KeyUp(new KeyEventArgs(key, false, false, false, false, false, 0));
++        }
++        _activeKeys.Clear();
++    }
++
++    protected internal override void Draw(DrawingHandleScreen handle)
++    {
++        base.Draw(handle);
++
++        var center = Size / 2f;
++
++        handle.DrawCircle(center, Radius, new Color(15, 15, 15, 150), true);
++        var baseBorder = IsEditMode ? new Color(255, 215, 0, 240) : new Color(240, 240, 240, 200);
++        handle.DrawCircle(center, Radius, baseBorder, false);
++
++        handle.DrawCircle(center, Radius * 0.55f, new Color(255, 255, 255, 25), false);
++
++        var wActive = _activeKeys.Contains(Keyboard.Key.W);
++        var sActive = _activeKeys.Contains(Keyboard.Key.S);
++        var aActive = _activeKeys.Contains(Keyboard.Key.A);
++        var dActive = _activeKeys.Contains(Keyboard.Key.D);
++
++        var activeColor = new Color(255, 225, 60, 255);
++        var inactiveColor = new Color(255, 255, 255, 140);
++
++        var dotRadius = Radius - 10f;
++        handle.DrawCircle(center + new Vector2(0, -dotRadius), wActive ? 6.5f : 4f, wActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(0, dotRadius), sActive ? 6.5f : 4f, sActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(-dotRadius, 0), aActive ? 6.5f : 4f, aActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(dotRadius, 0), dActive ? 6.5f : 4f, dActive ? activeColor : inactiveColor, true);
++
++        var diagOffset = dotRadius * 0.7071f;
++        var wdActive = wActive && dActive;
++        var waActive = wActive && aActive;
++        var sdActive = sActive && dActive;
++        var saActive = sActive && aActive;
++
++        handle.DrawCircle(center + new Vector2(diagOffset, -diagOffset), wdActive ? 6.5f : 3f, wdActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(-diagOffset, -diagOffset), waActive ? 6.5f : 3f, waActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(diagOffset, diagOffset), sdActive ? 6.5f : 3f, sdActive ? activeColor : inactiveColor, true);
++        handle.DrawCircle(center + new Vector2(-diagOffset, diagOffset), saActive ? 6.5f : 3f, saActive ? activeColor : inactiveColor, true);
++
++        handle.DrawCircle(center, 5f, new Color(255, 255, 255, 90), true);
++
++        if (_isPressed && _knobOffset.LengthSquared() > 9f)
++        {
++            handle.DrawLine(center, center + _knobOffset, new Color(255, 255, 255, 140));
++        }
++
++        var knobCenter = center + _knobOffset;
++        var knobBg = _isPressed
++            ? new Color(255, 255, 255, 235)
++            : new Color(210, 210, 210, 185);
++
++        var knobBorder = Color.White;
++
++        handle.DrawCircle(knobCenter, KnobRadius, knobBg, true);
++        handle.DrawCircle(knobCenter, KnobRadius, knobBorder, false);
++        handle.DrawCircle(knobCenter, 6f, new Color(30, 30, 30, 220), true);
++
++        if (IsEditMode)
++        {
++            var box = UIBox2.FromDimensions(Vector2.Zero, Size);
++            handle.DrawRect(box, new Color(255, 215, 0, 150), false);
++        }
++    }
++}
+diff --git a/Robust.Client/UserInterface/Stylesheets/DefaultStylesheet.cs b/Robust.Client/UserInterface/Stylesheets/DefaultStylesheet.cs
+index 7257588..f6cab0f 100644
+--- a/Robust.Client/UserInterface/Stylesheets/DefaultStylesheet.cs
++++ b/Robust.Client/UserInterface/Stylesheets/DefaultStylesheet.cs
+@@ -1,4 +1,5 @@
+-﻿using Robust.Client.Graphics;
++using System;
++using Robust.Client.Graphics;
+ using Robust.Client.ResourceManagement;
+ using Robust.Client.UserInterface.Controls;
+ using Robust.Client.UserInterface.CustomControls;
+@@ -22,22 +23,23 @@ public sealed class DefaultStylesheet
+ 
+         var theme = userInterfaceManager.CurrentTheme;
+ 
++        var scrollBarWidth = OperatingSystem.IsAndroid() ? 18 : 10;
+         var scrollBarNormal = new StyleBoxFlat {
+             BackgroundColor = theme.ResolveColorOrSpecified("scrollBarDefault",Color.FromHex("#80808059")),
+-            ContentMarginLeftOverride = 10,
+-            ContentMarginTopOverride = 10
++            ContentMarginLeftOverride = scrollBarWidth,
++            ContentMarginTopOverride = scrollBarWidth
+         };
+ 
+         var scrollBarHovered = new StyleBoxFlat {
+             BackgroundColor = theme.ResolveColorOrSpecified("scrollBarHovered",Color.FromHex("#8C8C8C59")),
+-            ContentMarginLeftOverride = 10,
+-            ContentMarginTopOverride = 10
++            ContentMarginLeftOverride = scrollBarWidth,
++            ContentMarginTopOverride = scrollBarWidth
+         };
+ 
+         var scrollBarGrabbed = new StyleBoxFlat {
+             BackgroundColor = theme.ResolveColorOrSpecified("scrollBarGrabbed",Color.FromHex("#8C8C8C59")),
+-            ContentMarginLeftOverride = 10,
+-            ContentMarginTopOverride = 10,
++            ContentMarginLeftOverride = scrollBarWidth,
++            ContentMarginTopOverride = scrollBarWidth,
+         };
+ 
+         Stylesheet = new Stylesheet(new StyleRule[]
+diff --git a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs b/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
+index 274aa2a..f8a5fe9 100644
+--- a/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
++++ b/Robust.Client/UserInterface/UserInterfaceManager.Input.cs
+@@ -46,6 +46,29 @@ internal partial class UserInterfaceManager
+     private const float TooltipDelay = 0.25f;
+     private readonly Dictionary<BoundKeyFunction, Control> _focusedControls = new();
+ 
++    private Control? _activeScrollTarget;
++    private Control? _touchDownTarget;
++    private Vector2 _touchDownPos;
++    private Vector2 _touchLastPos;
++    private bool _isTouchScrolling;
++    private const float TouchScrollThreshold = 10f;
++
++    private static Control? FindScrollable(Control? control)
++    {
++        if (control is ScrollBar or Slider)
++            return null;
++
++        while (control != null)
++        {
++            if (control is ScrollContainer sc && (sc.VScrollEnabled || sc.HScrollEnabled))
++                return sc;
++            if (control is ItemList or OutputPanel)
++                return control;
++            control = control.Parent;
++        }
++        return null;
++    }
++
+     private WindowRoot? _focusedRoot;
+ 
+     private static (Control control, Vector2 rel)? MouseFindControlAtPos(Control control, Vector2 position)
+@@ -103,6 +126,15 @@ internal partial class UserInterfaceManager
+             return;
+         }
+ 
++        if (OperatingSystem.IsAndroid() && args.Function == EngineKeyFunctions.UIClick)
++        {
++            _touchDownPos = args.PointerLocation.Position;
++            _touchLastPos = args.PointerLocation.Position;
++            _isTouchScrolling = false;
++            _touchDownTarget = control;
++            _activeScrollTarget = FindScrollable(control);
++        }
++
+         var guiArgs = new GUIBoundKeyEventArgs(args.Function, args.State, args.PointerLocation, args.CanFocus,
+             args.PointerLocation.Position / control.UIScale - control.GlobalPosition,
+             args.PointerLocation.Position - control.GlobalPixelPosition);
+@@ -121,6 +153,21 @@ internal partial class UserInterfaceManager
+ 
+     public void KeyBindUp(BoundKeyEventArgs args)
+     {
++        if (OperatingSystem.IsAndroid() && args.Function == EngineKeyFunctions.UIClick)
++        {
++            var wasScrolling = _isTouchScrolling;
++            _activeScrollTarget = null;
++            _touchDownTarget = null;
++            _isTouchScrolling = false;
++
++            if (wasScrolling)
++            {
++                _focusedControls.Remove(args.Function);
++                args.Handle();
++                return;
++            }
++        }
++
+         // Only raise keybind-up for the control on which we previously raised keybind-down
+         if (!_focusedControls.Remove(args.Function, out var control) || !control.VisibleInTree)
+             return;
+@@ -140,6 +187,63 @@ internal partial class UserInterfaceManager
+     public void MouseMove(MouseMoveEventArgs mouseMoveEventArgs)
+     {
+         _resetTooltipTimer();
++
++        if (OperatingSystem.IsAndroid() && _activeScrollTarget != null && _activeScrollTarget.VisibleInTree)
++        {
++            var curPos = mouseMoveEventArgs.Position.Position;
++            var totalDelta = curPos - _touchDownPos;
++            var stepDelta = (curPos - _touchLastPos) / _activeScrollTarget.UIScale;
++            _touchLastPos = curPos;
++
++            if (!_isTouchScrolling)
++            {
++                if (MathF.Abs(totalDelta.Y) > TouchScrollThreshold || MathF.Abs(totalDelta.X) > TouchScrollThreshold)
++                {
++                    _isTouchScrolling = true;
++
++                    if (_touchDownTarget != null && _touchDownTarget != _activeScrollTarget)
++                    {
++                        if (ControlFocused == _touchDownTarget)
++                        {
++                            ControlFocused = null;
++                        }
++
++                        if (_focusedControls.TryGetValue(EngineKeyFunctions.UIClick, out var focused) && focused == _touchDownTarget)
++                        {
++                            _focusedControls[EngineKeyFunctions.UIClick] = _activeScrollTarget;
++                        }
++                    }
++                }
++            }
++
++            if (_isTouchScrolling)
++            {
++                if (_activeScrollTarget is ScrollContainer sc)
++                {
++                    if (sc.VScrollEnabled)
++                    {
++                        sc.VScroll -= stepDelta.Y;
++                        sc.VScrollTarget = sc.VScroll;
++                    }
++                    if (sc.HScrollEnabled)
++                    {
++                        sc.HScroll -= stepDelta.X;
++                        sc.HScrollTarget = sc.HScroll;
++                    }
++                }
++                else if (_activeScrollTarget is ItemList list)
++                {
++                    list.ScrollByDelta(stepDelta.Y);
++                }
++                else if (_activeScrollTarget is OutputPanel panel)
++                {
++                    panel.ScrollByDelta(stepDelta.Y);
++                }
++
++                return;
++            }
++        }
++
+         // Update which control is considered hovered.
+         var newHovered = MouseGetControl(mouseMoveEventArgs.Position);
+         SetHovered(newHovered);
+@@ -583,4 +687,12 @@ internal partial class UserInterfaceManager
+ 
+         return pos - control.GlobalPosition;
+     }
++
++    public void TouchFinger(TouchFingerEventArgs args)
++    {
++        if (MobileOverlay != null && MobileOverlay.VisibleInTree)
++        {
++            MobileOverlay.HandleTouch(args);
++        }
++    }
+ }
+diff --git a/Robust.Client/UserInterface/UserInterfaceManager.cs b/Robust.Client/UserInterface/UserInterfaceManager.cs
+index 4c2c669..226c04f 100644
+--- a/Robust.Client/UserInterface/UserInterfaceManager.cs
++++ b/Robust.Client/UserInterface/UserInterfaceManager.cs
+@@ -53,6 +53,7 @@ namespace Robust.Client.UserInterface
+         [Dependency] private readonly IRuntimeLog _runtime = default!;
+         [Dependency] private readonly IClipboardManager _clipboard = null!;
+ 
++        public Mobile.MobileControlsOverlay? MobileOverlay { get; private set; }
+         private IAudioSource? _clickSource;
+         private IAudioSource? _hoverSource;
+ 
+@@ -189,6 +190,14 @@ namespace Robust.Client.UserInterface
+             RootControl.AddChild(WindowRoot);
+ 
+             RootControl.CreateRootControls();
++
++            if (OperatingSystem.IsAndroid() || _configurationManager.GetCVar(CVars.MobileTouchControls))
++            {
++                var mobileOverlay = new Mobile.MobileControlsOverlay();
++                MobileOverlay = mobileOverlay;
++                RootControl.AddChild(mobileOverlay);
++                LayoutContainer.SetAnchorPreset(mobileOverlay, LayoutContainer.LayoutPreset.Wide);
++            }
+         }
+ 
+         public void InitializeTesting()
+diff --git a/Robust.Client/UserInterface/XAML/Proxy/XamlHotReloadManager.cs b/Robust.Client/UserInterface/XAML/Proxy/XamlHotReloadManager.cs
+index 86fb916..98d5075 100644
+--- a/Robust.Client/UserInterface/XAML/Proxy/XamlHotReloadManager.cs
++++ b/Robust.Client/UserInterface/XAML/Proxy/XamlHotReloadManager.cs
+@@ -1,4 +1,4 @@
+-﻿#if TOOLS
++#if TOOLS
+ using System;
+ using System.Collections.Generic;
+ using System.IO;
+@@ -130,7 +130,7 @@ internal sealed class XamlHotReloadManager : IXamlHotReloadManager
+                 {
+                     files = Directory.GetFiles(systemPath);
+                 }
+-                catch (IOException) { }  // this is allowed to fail, and if so we just keep going up
++                catch (Exception) { }  // this is allowed to fail, and if so we just keep going up
+ 
+                 if (files.Any(f => Path.GetFileName(f).Equals(_markerFileName, StringComparison.InvariantCultureIgnoreCase)))
+                 {
+@@ -142,7 +142,7 @@ internal sealed class XamlHotReloadManager : IXamlHotReloadManager
+                 {
+                     newPath = Directory.GetParent(systemPath);
+                 }
+-                catch (IOException) { } // ditto here. if we don't find it, we're in the wrong place
++                catch (Exception) { } // ditto here. if we don't find it, we're in the wrong place
+ 
+                 if (newPath == null)
+                 {
+diff --git a/Robust.Shared/CVars.cs b/Robust.Shared/CVars.cs
+index e6c6a8b..7ccfc83 100644
+--- a/Robust.Shared/CVars.cs
++++ b/Robust.Shared/CVars.cs
+@@ -887,38 +887,44 @@ namespace Robust.Shared
+         /// Maximum number of lights that the client will draw.
+         /// </summary>
+         public static readonly CVarDef<int> MaxLightCount =
+-            CVarDef.Create("light.max_light_count", 2048, CVar.CLIENTONLY | CVar.ARCHIVE);
++            CVarDef.Create("light.max_light_count", OperatingSystem.IsAndroid() ? 256 : 2048, CVar.CLIENTONLY | CVar.ARCHIVE);
+ 
+         /// <summary>
+         /// Maximum number of occluders that the client will draw. Values below 1024 have no effect.
+         /// </summary>
+         public static readonly CVarDef<int> MaxOccluderCount =
+-            CVarDef.Create("light.max_occluder_count", 2048, CVar.CLIENTONLY | CVar.ARCHIVE);
++            CVarDef.Create("light.max_occluder_count", OperatingSystem.IsAndroid() ? 512 : 2048, CVar.CLIENTONLY | CVar.ARCHIVE);
+ 
+         /// <summary>
+         /// Scale used to modify the horizontal and vertical resolution of lighting framebuffers,
+         /// relative to the viewport framebuffer size.
+         /// </summary>
+         public static readonly CVarDef<float> LightResolutionScale =
+-            CVarDef.Create("light.resolution_scale", 0.5f, CVar.CLIENTONLY | CVar.ARCHIVE);
++            CVarDef.Create("light.resolution_scale", OperatingSystem.IsAndroid() ? 0.35f : 0.5f, CVar.CLIENTONLY | CVar.ARCHIVE);
+ 
+         /// <summary>
+         /// Maximum amount of shadow-casting lights that can be rendered in a single viewport at once.
+         /// </summary>
+         public static readonly CVarDef<int> MaxShadowcastingLights =
+-            CVarDef.Create("light.max_shadowcasting_lights", 128, CVar.CLIENTONLY | CVar.ARCHIVE);
++            CVarDef.Create("light.max_shadowcasting_lights", OperatingSystem.IsAndroid() ? 16 : 128, CVar.CLIENTONLY | CVar.ARCHIVE);
++
++        /// <summary>
++        /// Bleed light onto walls to soften dark edges. Extremely expensive on mobile GPUs (TBDR).
++        /// </summary>
++        public static readonly CVarDef<bool> LightWallBleed =
++            CVarDef.Create("light.wall_bleed", !OperatingSystem.IsAndroid(), CVar.CLIENTONLY | CVar.ARCHIVE);
+ 
+         /// <summary>
+         /// Whether to give shadows a soft edge when rendering.
+         /// </summary>
+         public static readonly CVarDef<bool> LightSoftShadows =
+-            CVarDef.Create("light.soft_shadows", true, CVar.CLIENTONLY | CVar.ARCHIVE);
++            CVarDef.Create("light.soft_shadows", !OperatingSystem.IsAndroid(), CVar.CLIENTONLY | CVar.ARCHIVE);
+ 
+         /// <summary>
+         /// Apply a gaussian blur to the final lighting framebuffer to smoothen it out a little.
+         /// </summary>
+         public static readonly CVarDef<bool> LightBlur=
+-            CVarDef.Create("light.blur", true, CVar.CLIENTONLY | CVar.ARCHIVE);
++            CVarDef.Create("light.blur", !OperatingSystem.IsAndroid(), CVar.CLIENTONLY | CVar.ARCHIVE);
+ 
+         /// <summary>
+         /// Factor by which to blur the lighting framebuffer under <c>light.blur</c>.
+@@ -1079,7 +1085,7 @@ namespace Robust.Shared
+         /// UI scale for all UI controls. If zero, this value is automatically calculated from the OS.
+         /// </summary>
+         public static readonly CVarDef<float> DisplayUIScale =
+-            CVarDef.Create("display.uiScale", 0f, CVar.ARCHIVE | CVar.CLIENTONLY);
++            CVarDef.Create("display.uiScale", 1f, CVar.ARCHIVE | CVar.CLIENTONLY);
+ 
+         // Clyde related enums are in Clyde.Constants.cs.
+ 
+@@ -1225,6 +1231,36 @@ namespace Robust.Shared
+         public static readonly CVarDef<bool> DisplayWin32Experience =
+             CVarDef.Create("display.win32_experience", false, CVar.CLIENTONLY);
+ 
++        /// <summary>
++        /// Enable PojavLauncher-style on-screen touch controls for mobile.
++        /// </summary>
++        public static readonly CVarDef<bool> MobileTouchControls =
++            CVarDef.Create("mobile.touch_controls", true, CVar.CLIENTONLY | CVar.ARCHIVE);
++
++        /// <summary>
++        /// Opacity for on-screen touch controls.
++        /// </summary>
++        public static readonly CVarDef<float> MobileControlsOpacity =
++            CVarDef.Create("mobile.controls_opacity", 0.85f, CVar.CLIENTONLY | CVar.ARCHIVE);
++
++        /// <summary>
++        /// Scale multiplier for on-screen touch controls.
++        /// </summary>
++        public static readonly CVarDef<float> MobileControlsScale =
++            CVarDef.Create("mobile.controls_scale", 2.0f, CVar.CLIENTONLY | CVar.ARCHIVE);
++
++        /// <summary>
++        /// Persistent custom layout positions for on-screen touch controls.
++        /// </summary>
++        public static readonly CVarDef<string> MobileControlsLayout =
++            CVarDef.Create("mobile.controls_layout", "", CVar.CLIENTONLY | CVar.ARCHIVE);
++
++        /// <summary>
++        /// Additional scale multiplier specifically for the on-screen virtual thumbstick.
++        /// </summary>
++        public static readonly CVarDef<float> MobileThumbstickScale =
++            CVarDef.Create("mobile.thumbstick_scale", 1.0f, CVar.CLIENTONLY | CVar.ARCHIVE);
++
+         /// <summary>
+         /// The window icon set to use. Overriden by <c>GameControllerOptions</c> on startup.
+         /// </summary>
+diff --git a/Robust.Shared/Configuration/ConfigurationManager.cs b/Robust.Shared/Configuration/ConfigurationManager.cs
+index 376787f..8a9b097 100644
+--- a/Robust.Shared/Configuration/ConfigurationManager.cs
++++ b/Robust.Shared/Configuration/ConfigurationManager.cs
+@@ -531,11 +531,29 @@ namespace Robust.Shared.Configuration
+ 
+         public void LoadCVarsFromAssembly(Assembly assembly)
+         {
+-            foreach (var type in assembly
+-                         .GetTypes()
+-                         .Where(p => Attribute.IsDefined(p, typeof(CVarDefsAttribute))))
++            Type[] types;
++            try
++            {
++                types = assembly.GetTypes();
++            }
++            catch (ReflectionTypeLoadException ex)
+             {
+-                LoadCVarsFromType(type);
++                types = ex.Types.Where(t => t != null).ToArray()!;
++            }
++
++            foreach (var type in types)
++            {
++                try
++                {
++                    if (Attribute.IsDefined(type, typeof(CVarDefsAttribute)))
++                    {
++                        LoadCVarsFromType(type);
++                    }
++                }
++                catch
++                {
++                    // Ignore types with incompatible attributes from fork/custom assemblies
++                }
+             }
+         }
+ 
+diff --git a/Robust.Shared/ContentPack/BaseModLoader.cs b/Robust.Shared/ContentPack/BaseModLoader.cs
+index 830ba56..cf81176 100644
+--- a/Robust.Shared/ContentPack/BaseModLoader.cs
++++ b/Robust.Shared/ContentPack/BaseModLoader.cs
+@@ -31,6 +31,8 @@ namespace Robust.Shared.ContentPack
+             return Mods.Select(p => p.GameAssembly).Single(p => p.GetName().Name == name);
+         }
+ 
++        public void RegisterAlreadyLoadedAssembly(Assembly assembly) => InitMod(assembly);
++
+         protected void InitMod(Assembly assembly)
+         {
+             var mod = new ModInfo(assembly);
+diff --git a/Robust.Shared/ContentPack/DirLoader.cs b/Robust.Shared/ContentPack/DirLoader.cs
+index 2524f06..416ccbd 100644
+--- a/Robust.Shared/ContentPack/DirLoader.cs
++++ b/Robust.Shared/ContentPack/DirLoader.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.Diagnostics;
+ using System.Diagnostics.CodeAnalysis;
+@@ -41,12 +41,12 @@ namespace Robust.Shared.ContentPack
+                 // Nothing to check here since the ResourceManager handles checking permissions.
+             }
+ 
+-            /// <inheritdoc />
+             public bool TryGetFile(ResPath relPath, [NotNullWhen(true)] out Stream? stream)
+             {
+                 var path = GetPath(relPath);
+                 CheckPathCasing(relPath);
+ 
++                var exists = File.Exists(path);
+                 var ret = FileHelper.TryOpenFileRead(path, out var fStream);
+                 stream = fStream;
+                 return ret;
+@@ -63,7 +63,6 @@ namespace Robust.Shared.ContentPack
+                 return PathHelpers.SafeGetResourcePath(_directory.FullName, relPath);
+             }
+ 
+-            /// <inheritdoc />
+             public IEnumerable<ResPath> FindFiles(ResPath path)
+             {
+                 var fullPath = GetPath(path);
+@@ -72,7 +71,17 @@ namespace Robust.Shared.ContentPack
+                     yield break;
+                 }
+ 
+-                var paths = PathHelpers.GetFiles(fullPath);
++                IEnumerable<string> paths;
++                try
++                {
++                    paths = PathHelpers.GetFiles(fullPath);
++                }
++                catch (UnauthorizedAccessException ex)
++                {
++                    var debugLog = "/data/user/0/io.spacestation14.android/files/debug.txt";
++                    File.AppendAllText(debugLog, $"DirLoader.FindFiles CRASH: fullPath='{fullPath}', relSysPath='{path.ToRelativeSystemPath()}', Ex={ex}\n");
++                    throw new UnauthorizedAccessException($"FindFiles crashed on fullPath='{fullPath}'", ex);
++                }
+ 
+                 // GetFiles returns full paths, we want them relative to root
+                 foreach (var filePath in paths)
+diff --git a/Robust.Shared/ContentPack/PathHelpers.cs b/Robust.Shared/ContentPack/PathHelpers.cs
+index 64ffaee..0cabecb 100644
+--- a/Robust.Shared/ContentPack/PathHelpers.cs
++++ b/Robust.Shared/ContentPack/PathHelpers.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.IO;
+ using Robust.Shared.Utility;
+@@ -15,14 +15,22 @@ namespace Robust.Shared.ContentPack
+         /// </summary>
+         internal static string GetExecutableDirectory()
+         {
++            if (!string.IsNullOrEmpty(ProgramShared.PathOffset))
++            {
++                return ProgramShared.PathOffset;
++            }
++
++            if (OperatingSystem.IsAndroid())
++            {
++                return "/data/data/io.spacestation14.android/files";
++            }
++
+             // Fallback in case the above doesn't work ig?
+             var assembly = typeof(PathHelpers).Assembly;
+             var location = assembly.Location;
+-            if (location == string.Empty)
++            if (string.IsNullOrEmpty(location))
+             {
+-                // See https://docs.microsoft.com/en-us/dotnet/api/system.reflection.assembly.location?view=net-5.0#remarks
+-                // This doesn't apply to us really because we don't do that kind of publishing, but whatever.
+-                throw new InvalidOperationException("Cannot find path of executable.");
++                return AppContext.BaseDirectory;
+             }
+             return Path.GetDirectoryName(location)!;
+         }
+diff --git a/Robust.Shared/Native/Libc.cs b/Robust.Shared/Native/Libc.cs
+index 06be04d..e29fe66 100644
+--- a/Robust.Shared/Native/Libc.cs
++++ b/Robust.Shared/Native/Libc.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Runtime.InteropServices;
+ 
+ namespace Robust.Shared.Native;
+@@ -14,6 +14,6 @@ internal static class Libc
+     public const int RTLD_LOCAL = 0;
+     public const int RTLD_NODELETE = 0x01000;
+ 
+-    [DllImport("libdl.so.2")]
++    [DllImport("libdl")]
+     public static extern IntPtr dlopen([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int flags);
+ }
+diff --git a/Robust.Shared/Network/AuthManager.cs b/Robust.Shared/Network/AuthManager.cs
+index ea2250e..a86a98e 100644
+--- a/Robust.Shared/Network/AuthManager.cs
++++ b/Robust.Shared/Network/AuthManager.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Diagnostics.CodeAnalysis;
+ 
+ namespace Robust.Shared.Network
+@@ -8,7 +8,7 @@ namespace Robust.Shared.Network
+     /// <summary>
+     ///     Stores client authentication parameters.
+     /// </summary>
+-    internal interface IAuthManager
++    public interface IAuthManager
+     {
+         NetUserId? UserId { get; set; }
+         string? Server { get; set; }
+diff --git a/Robust.Shared/ProgramShared.cs b/Robust.Shared/ProgramShared.cs
+index a75bfa0..2c8479a 100644
+--- a/Robust.Shared/ProgramShared.cs
++++ b/Robust.Shared/ProgramShared.cs
+@@ -29,27 +29,33 @@ internal static class ProgramShared
+     }
+ 
+ #if !FULL_RELEASE
+-    private static string FindContentRootDir(StartType startType)
++    private static string FindEngineRootDir(StartType startType)
+     {
++        if (OperatingSystem.IsAndroid())
++            return PathOffset;
++
+         var relative = startType switch
+         {
+-            StartType.Engine => "../../../",
+-            StartType.Content => "../../",
++            StartType.Engine => "../../",
++            StartType.Content => "../../RobustToolbox/",
+             StartType.Loader => throw new InvalidOperationException(),
+-            StartType.ContentAppBundle => "../../../../../",
++            StartType.ContentAppBundle => "../../../../../RobustToolbox/",
+             _ => throw new ArgumentOutOfRangeException(nameof(startType), startType, null)
+         };
+         return PathOffset + relative;
+     }
+ 
+-    private static string FindEngineRootDir(StartType startType)
++    private static string FindContentRootDir(StartType startType)
+     {
++        if (OperatingSystem.IsAndroid())
++            return PathOffset;
++
+         var relative = startType switch
+         {
+-            StartType.Engine => "../../",
+-            StartType.Content => "../../RobustToolbox/",
++            StartType.Engine => "../../bin/Content.Server/",
++            StartType.Content => "../../",
+             StartType.Loader => throw new InvalidOperationException(),
+-            StartType.ContentAppBundle => "../../../../../RobustToolbox/",
++            StartType.ContentAppBundle => "../../../../../",
+             _ => throw new ArgumentOutOfRangeException(nameof(startType), startType, null)
+         };
+         return PathOffset + relative;
+@@ -78,7 +84,15 @@ internal static class ProgramShared
+ #else
+         var engineRoot = FindEngineRootDir(startType);
+         // System.Console.WriteLine($"ENGINE DIR IS {engineRoot}");
+-        res.MountContentDirectory($@"{engineRoot}Resources/");
++        var engineZip = Path.Combine(engineRoot, "resources.zip");
++        if (File.Exists(engineZip))
++        {
++            res.MountContentPack(engineZip);
++        }
++        else
++        {
++            res.MountContentDirectory($@"{engineRoot}Resources/");
++        }
+ 
+         if (loadContentResources)
+         {
+@@ -88,12 +102,25 @@ internal static class ProgramShared
+             {
+                 res.MountContentDirectory("./", assembliesPath);
+             }
++            else if (OperatingSystem.IsAndroid())
++            {
++                res.MountContentDirectory(PathOffset, assembliesPath);
++            }
+             else
+             {
+                 res.MountContentDirectory($@"{contentRootDir}bin/{contentBuildDir}/", assembliesPath);
+             }
+ 
+-            res.MountContentDirectory($@"{contentRootDir}Resources/");
++            var contentZip = Path.Combine(contentRootDir, "resources.zip");
++            if (File.Exists(contentZip))
++            {
++                if (contentZip != engineZip)
++                    res.MountContentPack(contentZip);
++            }
++            else
++            {
++                res.MountContentDirectory($@"{contentRootDir}Resources/");
++            }
+         }
+ #endif
+ 
+diff --git a/Robust.Shared/Timing/PrecisionSleep.cs b/Robust.Shared/Timing/PrecisionSleep.cs
+index 328e021..13a9d2f 100644
+--- a/Robust.Shared/Timing/PrecisionSleep.cs
++++ b/Robust.Shared/Timing/PrecisionSleep.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Runtime.InteropServices;
+ using System.Threading;
+ using TerraFX.Interop.Windows;
+@@ -141,7 +141,7 @@ internal sealed unsafe class PrecisionSleepLinuxNanosleep : PrecisionSleep
+ #pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
+     // ReSharper disable IdentifierTypo
+     // ReSharper disable InconsistentNaming
+-    [DllImport("libc.so.6", SetLastError=true)]
++    [DllImport("libc", SetLastError=true)]
+     private static extern int nanosleep(timespec* req, timespec* rem);
+ 
+     private struct timespec

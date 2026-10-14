@@ -548,7 +548,7 @@ namespace Content.Android
                 var filesDir = "/data/data/io.spacestation14.android/files";
                 var zipFile = Path.Combine(filesDir, "resources.zip");
 
-                if (!File.Exists(zipFile) || new FileInfo(zipFile).Length == 0)
+                // Refresh engine resources after an APK update.
                 {
                     var assembly = typeof(MainActivity).Assembly;
                     var resourceName = "Content.Android.resources.zip";

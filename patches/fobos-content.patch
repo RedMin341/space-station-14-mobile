@@ -1,0 +1,109 @@
+diff --git a/Content.Client/Content.Client.csproj b/Content.Client/Content.Client.csproj
+index b0c7add94..e4ea7ddc0 100644
+--- a/Content.Client/Content.Client.csproj
++++ b/Content.Client/Content.Client.csproj
+@@ -2,7 +2,7 @@
+   <PropertyGroup>
+     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+     <OutputPath>..\bin\Content.Client\</OutputPath>
+-    <OutputType Condition="'$(FullRelease)' != 'True'">Exe</OutputType>
++    <OutputType>Library</OutputType>
+     <WarningsAsErrors>RA0032;nullable</WarningsAsErrors>
+   </PropertyGroup>
+   <Import Project="../MSBuild/Content.props" />
+diff --git a/Content.Client/UserInterface/Controls/MainViewport.cs b/Content.Client/UserInterface/Controls/MainViewport.cs
+index 5fed4379c..6b3e0f5b9 100644
+--- a/Content.Client/UserInterface/Controls/MainViewport.cs
++++ b/Content.Client/UserInterface/Controls/MainViewport.cs
+@@ -59,9 +59,9 @@ public void UpdateCfg()
+             if (stretch)
+             {
+                 var snapFactor = CalcSnappingFactor();
+-                if (snapFactor == null)
++                if (snapFactor == null || OperatingSystem.IsAndroid())
+                 {
+-                    // Did not find a snap, enable stretching.
++                    // Did not find a snap or on mobile: enable stretching to fill screen height.
+                     Viewport.FixedStretchSize = null;
+                     Viewport.StretchMode = filterMode switch
+                     {
+diff --git a/Content.Client/UserInterface/Controls/SlotControl.cs b/Content.Client/UserInterface/Controls/SlotControl.cs
+index e8bd8025f..b4b3a50e2 100644
+--- a/Content.Client/UserInterface/Controls/SlotControl.cs
++++ b/Content.Client/UserInterface/Controls/SlotControl.cs
+@@ -161,9 +161,10 @@ public SlotControl()
+                 OverrideDirection = Direction.South
+             });
+ 
++            var storageScale = OperatingSystem.IsAndroid() ? new Vector2(1.5f, 1.5f) : new Vector2(0.75f, 0.75f);
+             AddChild(StorageButton = new TextureButton
+             {
+-                Scale = new Vector2(0.75f, 0.75f),
++                Scale = storageScale,
+                 HorizontalAlignment = HAlignment.Right,
+                 VerticalAlignment = VAlignment.Bottom,
+                 Visible = false,
+diff --git a/Content.Client/UserInterface/Systems/Storage/Controls/StorageWindow.cs b/Content.Client/UserInterface/Systems/Storage/Controls/StorageWindow.cs
+index e96212933..f021b89da 100644
+--- a/Content.Client/UserInterface/Systems/Storage/Controls/StorageWindow.cs
++++ b/Content.Client/UserInterface/Systems/Storage/Controls/StorageWindow.cs
+@@ -706,6 +706,11 @@ protected override DragMode GetDragModeFor(Vector2 relativeMousePos)
+             return DragMode.Move;
+         }
+ 
++        if (_titleContainer != null && _titleContainer.SizeBox.Contains(relativeMousePos - _titleContainer.Position))
++        {
++            return DragMode.Move;
++        }
++
+         return DragMode.None;
+     }
+ 
+diff --git a/Content.Client/Viewport/ScalingViewport.cs b/Content.Client/Viewport/ScalingViewport.cs
+index d9548d0f0..e328c1bfe 100644
+--- a/Content.Client/Viewport/ScalingViewport.cs
++++ b/Content.Client/Viewport/ScalingViewport.cs
+@@ -1,3 +1,7 @@
++using Content.Client.Movement.Systems;
++using Content.Shared.Movement.Components;
++using Content.Shared.Movement.Systems;
++using Robust.Client.Player;
+ using System;
+ using System.Collections.Generic;
+ using System.Numerics;
+@@ -25,6 +29,8 @@ public sealed class ScalingViewport : Control, IViewportControl
+         [Dependency] private readonly IEntityManager _entityManager = default!;
+         [Dependency] private readonly IInputManager _inputManager = default!;
+ 
++        [Dependency] private readonly IPlayerManager _playerManager = default!;
++
+         // Internal viewport creation is deferred.
+         private IClydeViewport? _viewport;
+         private IEye? _eye;
+@@ -144,6 +150,26 @@ protected override void KeyBindUp(GUIBoundKeyEventArgs args)
+             _inputManager.ViewportKeyEvent(this, args);
+         }
+ 
++        protected override void MouseWheel(GUIMouseWheelEventArgs args)
++        {
++            base.MouseWheel(args);
++
++            if (args.Handled)
++                return;
++
++            if (_entityManager.TrySystem<ContentEyeSystem>(out var eyeSystem) &&
++                _playerManager.LocalEntity is { } player &&
++                _entityManager.TryGetComponent<ContentEyeComponent>(player, out var eyeComp))
++            {
++                var zoomMod = SharedContentEyeSystem.ZoomMod;
++                var newZoom = args.Delta.Y > 0
++                    ? eyeComp.TargetZoom / zoomMod
++                    : eyeComp.TargetZoom * zoomMod;
++                eyeSystem.RequestZoom(player, newZoom, false, false, eyeComp);
++                args.Handle();
++            }
++        }
++
+         protected override void Draw(IRenderHandle handle)
+         {
+             EnsureViewportCreated();

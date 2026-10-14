@@ -1,4 +1,4 @@
-name: Build Android Release
+name: Build SS14 Fobos 276
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ on:
         default: ''
   push:
     branches:
-      - ss14-touch
+      - ss14-fobos-276
 
 jobs:
   build-apk:
-    name: Build Android Release APK
+    name: Build SS14 Fobos APK
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,32 +22,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          submodules: false
+
+      - name: Checkout pinned Fobos content
+        uses: actions/checkout@v4
+        with:
+          repository: dead-space-server/space-station-14-fobos
+          ref: 94c8636c48eb4d5797a5037f00438917f925337b
+          path: space-station-14
           submodules: recursive
 
-      - name: Apply Mobile Patches
+      - name: Apply Fobos Android patches
         run: |
-          find space-station-14 -name "nuget.config" -type f -delete
-          find RobustToolbox -name "nuget.config" -type f -delete 2>/dev/null || true
-          cd space-station-14/RobustToolbox
-          git apply --ignore-whitespace --whitespace=nowarn ../../patches/mobile.patch
-          cd ../..
-          cd space-station-14
-          git apply --ignore-whitespace --whitespace=nowarn ../patches/client-fixes.patch
-          cd ..
-
-      - name: Configure SS14 Touch personal build
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          for f in Path("Content.Android").rglob("*"):
-              if f.is_file() and f.suffix in (".cs", ".csproj", ".xml"):
-                  original = f.read_text()
-                  updated = original.replace("io.spacestation14.android", "io.ss14.touch.personal")
-                  updated = updated.replace('Label = "Space Station 14"', 'Label = "SS14 Touch"')
-                  updated = updated.replace('<string name="app_name">Space Station 14</string>', '<string name="app_name">SS14 Touch</string>')
-                  if updated != original:
-                      f.write_text(updated)
-          PY
+          git -C space-station-14/RobustToolbox apply --check ../../patches/fobos-mobile.patch
+          git -C space-station-14/RobustToolbox apply ../../patches/fobos-mobile.patch
+          git -C space-station-14 apply --check ../patches/fobos-content.patch
+          git -C space-station-14 apply ../patches/fobos-content.patch
+          python3 scripts/prepare-fobos.py
 
       - name: Read version
         id: ver
@@ -114,8 +105,8 @@ jobs:
             echo "No keystore available; falling back to debug signing."
           fi
 
-      - name: Build Android Release APK
-        run: dotnet build Content.Android/Content.Android.csproj -c Release
+      - name: Build SS14 Fobos APK
+        run: dotnet build Content.Android/Content.Android.csproj -c Release -p:TargetOS=Android -p:UseSharedCompilation=false
         env:
           AndroidSigningKeyStore: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && 'release.keystore' || '' }}
           AndroidSigningKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_ALIAS || 'ss14mobile' }}
@@ -139,7 +130,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SS14-Touch-APK
+          name: SS14-Fobos-276-APK
           path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 14
 

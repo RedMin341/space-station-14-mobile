@@ -2266,6 +2266,15 @@ public sealed class LauncherActivity : Activity
                 return;
             }
 
+            if (!FobosBuild.Matches(build))
+            {
+                throw new InvalidOperationException(
+                    "Эта версия SS14 Фобос рассчитана на движок " + FobosBuild.Engine +
+                    " и сборку " + FobosBuild.ContentRevision[..8] +
+                    ". Сервер использует " + build.EngineVersion + " / " + build.Version +
+                    ". Нужна новая сборка APK под обновление сервера.");
+            }
+
             var cacheDir = Path.Combine(FilesDir?.AbsolutePath ?? AppContext.BaseDirectory, "content_cache");
             Directory.CreateDirectory(cacheDir);
 
@@ -2355,6 +2364,12 @@ public sealed class LauncherActivity : Activity
     private void LaunchGameWithZip(string? targetZip, ServerInfo? serverInfo, string ss14Address)
     {
         _overlayBox.Visibility = ViewStates.Gone;
+
+        if (!FobosBuild.Matches(serverInfo?.Build))
+        {
+            Toast.MakeText(this, "Сборка сервера не соответствует этой версии SS14 Фобос.", ToastLength.Long)?.Show();
+            return;
+        }
 
         var intent = new Intent(this, typeof(MainActivity));
         intent.AddFlags(ActivityFlags.ClearTop | ActivityFlags.SingleTop);
@@ -2596,22 +2611,7 @@ public sealed class LauncherActivity : Activity
 
     private void LaunchOfflineSandbox()
     {
-        var intent = new Intent(this, typeof(MainActivity));
-        var prefs = GetSharedPreferences("ss14_mobile_config", FileCreationMode.Private);
-        if (prefs != null)
-        {
-            var s = prefs.GetFloat("mobile_scale", 1.0f);
-            intent.PutExtra("cvar_build_mobile.controls_scale", s.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
-            var o = prefs.GetFloat("mobile_opacity", 0.85f);
-            intent.PutExtra("cvar_build_mobile.controls_opacity", o.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-            var stickScale = prefs.GetFloat("mobile_stick_scale", 1.0f);
-            intent.PutExtra("cvar_build_mobile.thumbstick_scale", stickScale.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-            var guiScale = prefs.GetFloat("gui_scale", 1.0f);
-            intent.PutExtra("cvar_build_display.uiScale", guiScale.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-            var dispRes = prefs.GetString("display_resolution", "native") ?? "native";
-            intent.PutExtra("display_resolution", dispRes);
-        }
-        StartActivity(intent);
+        Toast.MakeText(this, "Эта сборка загружает ресурсы с Фобоса. Выберите сервер и нажмите CONNECT.", ToastLength.Long)?.Show();
     }
 
     private void OpenUrl(string url)
@@ -2624,7 +2624,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "v1.2.0";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.0";
 
     public string GetCurrentAppVersion()
     {
