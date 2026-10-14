@@ -389,19 +389,19 @@ public sealed class LauncherActivity : Activity
         settingsBtn.Click += (_, _) => ShowSettingsDialog();
         bottomBar.AddView(settingsBtn);
 
-        var sandboxBtn = new Button(this)
+        var helpBtn = new Button(this)
         {
-            Text = "Offline Sandbox",
+            Text = "Помощь",
             TextSize = 11
         };
-        sandboxBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
-        sandboxBtn.SetTextColor(LauncherTheme.Foreground);
-        sandboxBtn.SetPadding((int)(10 * density), 0, (int)(10 * density), 0);
-        var sandboxLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
-        sandboxLp.SetMargins(0, 0, (int)(8 * density), 0);
-        sandboxBtn.LayoutParameters = sandboxLp;
-        sandboxBtn.Click += (_, _) => LaunchOfflineSandbox();
-        bottomBar.AddView(sandboxBtn);
+        helpBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+        helpBtn.SetTextColor(LauncherTheme.Foreground);
+        helpBtn.SetPadding((int)(10 * density), 0, (int)(10 * density), 0);
+        var helpLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
+        helpLp.SetMargins(0, 0, (int)(8 * density), 0);
+        helpBtn.LayoutParameters = helpLp;
+        helpBtn.Click += (_, _) => ShowControlsHelpDialog();
+        bottomBar.AddView(helpBtn);
 
         var logsBtn = new Button(this)
         {
@@ -2620,7 +2620,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "Фобос 276 · 0.1.2";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.3";
 
     public string GetCurrentAppVersion()
     {
@@ -2635,6 +2635,58 @@ public sealed class LauncherActivity : Activity
         }
         catch {}
         return CurrentAppVersion;
+    }
+
+    private void ShowControlsHelpDialog()
+    {
+        var density = Resources?.DisplayMetrics?.Density ?? 1f;
+        var scroll = new ScrollView(this);
+        var content = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        content.SetBackgroundColor(LauncherTheme.PopupBackground);
+        content.SetPadding((int)(20 * density), (int)(12 * density), (int)(20 * density), (int)(12 * density));
+        scroll.AddView(content);
+
+        void AddSection(string heading, string body)
+        {
+            var title = new TextView(this)
+            {
+                Text = heading,
+                TextSize = 16,
+                Typeface = Typeface.DefaultBold
+            };
+            title.SetTextColor(LauncherTheme.NanoGold);
+            title.SetPadding(0, (int)(12 * density), 0, (int)(6 * density));
+            content.AddView(title);
+            var text = new TextView(this) { Text = body, TextSize = 14 };
+            text.SetTextColor(LauncherTheme.Foreground);
+            text.SetPadding(0, 0, 0, (int)(12 * density));
+            content.AddView(text);
+        }
+
+        AddSection("Как выбрать предмет из кучи — SEC", "SEC = правая кнопка мыши (ПКМ), а не клавиша на клавиатуре.\n1. Нажми SEC и отпусти: кнопка включится.\n2. Коснись нужного места на игровом поле — это касание станет правым кликом и должно открыть список объектов.\n3. Выбирай предмет в списке обычным касанием.\nПосле касания игрового поля SEC выключается. Повторное нажатие SEC до выбора отменяет режим. Касания кнопок интерфейса его не расходуют.\nПеред этим выключи ALT, EXAM и PULL, если они подсвечены: модификаторы меняют действие клика.");
+        AddSection("Касание и движение", "Касание игрового поля = левая кнопка мыши (ЛКМ): взаимодействие с объектом, подбор предмета или применение предмета в руке.\nДжойстик = W / A / S / D: движение.");
+        AddSection("USE — Z", "Активировать предмет в активной руке. Это не обычный клик по предмету на полу.");
+        AddSection("INTER — E", "Активировать объект в мире под указателем. Действие зависит от объекта; например, открытие контейнера. Указатель находится в месте последнего касания игрового поля.");
+        AddSection("HAND — X", "Сменить активную руку.");
+        AddSection("DROP — Q", "Положить предмет из активной руки на пол.");
+        AddSection("BAG — V", "Открыть надетый рюкзак.");
+        AddSection("THROW — Ctrl + Q", "Бросить предмет из активной руки в сторону указателя. Направление задаёт положение указателя на игровом поле.");
+        AddSection("EXAM — Shift", "Включить Shift, затем коснуться объекта: Shift + ЛКМ — осмотреть. Удерживаемый Shift также меняет другие клавиши и включает ходьбу. Если кнопка остаётся подсвеченной, нажми её повторно для выключения.");
+        AddSection("PULL — Ctrl", "Включить Ctrl, затем коснуться объекта: Ctrl + ЛКМ — начать тянуть / переключить тягу. Если кнопка остаётся подсвеченной, нажми её повторно для выключения. На ПК H — отпустить перетаскиваемый объект; такую кнопку можно добавить через EDIT.");
+        AddSection("ALT — Alt", "Включить Alt, затем коснуться объекта: Alt + ЛКМ — альтернативное взаимодействие. Нажми ALT повторно, чтобы выключить. Alt + Z — альтернативная активация предмета в руке.");
+        AddSection("ESC — Escape", "Закрыть открытое окно или отменить действие — в зависимости от текущего интерфейса. Отдельная клавиша меню игры на ПК — F10.");
+        AddSection("KEYB — экранная клавиатура", "Показать или скрыть клавиатуру телефона. Для ввода сначала выбери текстовое поле. На ПК T переводит фокус в чат; кнопку T можно добавить через EDIT.");
+        AddSection("EDIT — настройка кнопок", "Включить редактирование сенсорного управления: перемещать кнопки, менять их размер и назначение, добавлять свои клавиши. Нажми DONE (на месте EDIT), чтобы сохранить раскладку и закончить редактирование. После переназначения кнопок эта справка описывает только исходную раскладку.");
+        AddSection("HIDE — скрыть управление", "HIDE скрывает основные сенсорные кнопки. Для возврата нажми SHOW — эта надпись появится на той же кнопке.");
+        AddSection("Приближение — − / масштаб / +", "Кнопки вверху игрового поля: + приближает картинку, − отдаляет, нажатие на значение масштаба возвращает 1×. Диапазон 1×–3×. Приближение помогает точнее попадать по мелким объектам.");
+        AddSection("Другие полезные клавиши ПК", "I — инвентарь; G — создание предметов; U — меню персонажа; R — поворот объекта; H — отпустить перетаскиваемый объект; F10 — меню игры.\nИх можно назначить дополнительным кнопкам через EDIT. Справка соответствует стандартной раскладке Фобоса; изменённые игровые привязки и контекст (например, управление шаттлом) могут менять действия.");
+
+        var builder = new AlertDialog.Builder(this);
+        builder.SetTitle("Помощь — управление Фобосом");
+        builder.SetView(scroll);
+        builder.SetPositiveButton("Закрыть", (_, _) => { });
+        builder.SetNeutralButton("О порте", (_, _) => ShowDisclaimerDialog());
+        builder.Create()?.Show();
     }
 
     private void ShowDisclaimerDialog()
@@ -2652,7 +2704,7 @@ public sealed class LauncherActivity : Activity
 
         var title = new TextView(this)
         {
-            Text = "Unofficial Mobile Client",
+            Text = "Неофициальный клиент — Фобос",
             TextSize = 16,
             Typeface = Typeface.DefaultBold
         };
@@ -2662,11 +2714,7 @@ public sealed class LauncherActivity : Activity
 
         var msgText = new TextView(this)
         {
-            Text = "This Space Station 14 Android port is an UNOFFICIAL, community-driven client modification.\n\n" +
-                   "• It is NOT developed, provided, or supported by Wizard's Den or Space Wizards Federation.\n\n" +
-                   "• Play at your own risk: Stability, controls, and performance vary depending on your device.\n\n" +
-                   "• DO NOT report mobile-specific issues (crashes, low FPS, touch UI bugs) via in-game 'ahelp' or to official Wizard's Den staff/mentors.\n\n" +
-                   "• If you encounter bugs or performance problems, report them directly to the GitHub Issues section.",
+            Text = "Этот порт Space Station 14 для Android — неофициальная модификация, созданная сообществом.\n\n• Эта версия сделана только для сборки «Мёртвый Космос — Фобос». Запуск других проектов и серверных сборок не гарантируется.\n\n• Порт не разработан, не предоставляется и не поддерживается Wizard’s Den или Space Wizards Federation.\n\n• Играйте на свой риск: стабильность, управление и производительность зависят от устройства.\n\n• Не сообщайте о проблемах мобильного клиента (вылетах, низком FPS, ошибках сенсорного управления) через игровой ahelp или сотрудникам и менторам Wizard’s Den.",
             TextSize = 12
         };
         msgText.SetTextColor(LauncherTheme.Foreground);
@@ -2679,26 +2727,11 @@ public sealed class LauncherActivity : Activity
         };
         btnRow.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
 
-        var issuesBtn = new Button(this)
-        {
-            Text = "GitHub Issues",
-            TextSize = 11
-        };
-        issuesBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
-        issuesBtn.SetTextColor(LauncherTheme.Foreground);
-        var issuesLp = new LinearLayout.LayoutParams(0, (int)(36 * density), 1f)
-        {
-            RightMargin = (int)(6 * density)
-        };
-        issuesBtn.LayoutParameters = issuesLp;
-        issuesBtn.Click += (_, _) => OpenUrl("https://github.com/SolomonNumb1/space-station-14-mobile/issues");
-        btnRow.AddView(issuesBtn);
-
         AlertDialog? dialog = null;
 
         var agreeBtn = new Button(this)
         {
-            Text = "I Understand & Agree",
+            Text = "Понятно, согласен",
             TextSize = 11,
             Typeface = Typeface.DefaultBold
         };
