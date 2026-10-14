@@ -115,10 +115,7 @@ public sealed class LauncherActivity : Activity
         {
             ShowDisclaimerDialog();
         }
-        else
-        {
-            _ = CheckForUpdatesAsync();
-        }
+        
 
         CheckForCrashAndPrompt();
         _ = Task.Run(() => ContentCacheManager.PruneStaleCache(this, _storage));
@@ -442,7 +439,6 @@ public sealed class LauncherActivity : Activity
         versionBtn.SetTextColor(LauncherTheme.SubText);
         versionBtn.SetPadding((int)(8 * density), 0, (int)(8 * density), 0);
         versionBtn.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
-        versionBtn.Click += async (_, _) => await CheckForUpdatesAsync(userInitiated: true);
         bottomBar.AddView(versionBtn);
 
         mainLayout.AddView(bottomBar);
@@ -2624,7 +2620,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "Фобос 276 · 0.1.1";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.2";
 
     public string GetCurrentAppVersion()
     {
@@ -2715,7 +2711,6 @@ public sealed class LauncherActivity : Activity
             _storage.Data.DisclaimerAccepted = true;
             _storage.Save();
             dialog?.Dismiss();
-            _ = CheckForUpdatesAsync();
         };
         btnRow.AddView(agreeBtn);
 
@@ -2728,172 +2723,4 @@ public sealed class LauncherActivity : Activity
         dialog.Show();
     }
 
-    private async Task CheckForUpdatesAsync(bool userInitiated = false)
-    {
-        try
-        {
-            using var http = new HttpClient();
-            http.Timeout = TimeSpan.FromSeconds(10);
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("SS14-Android-Launcher");
-
-            var json = await http.GetStringAsync("https://api.github.com/repos/SolomonNumb1/space-station-14-mobile/releases/latest");
-            var release = JsonSerializer.Deserialize<GitHubReleaseInfo>(json);
-            if (release == null || string.IsNullOrWhiteSpace(release.TagName))
-            {
-                if (userInitiated)
-                {
-                    RunOnUiThread(() => Toast.MakeText(this, "Could not check for updates.", ToastLength.Short)?.Show());
-                }
-                return;
-            }
-
-            var currentVer = GetCurrentAppVersion();
-            if (IsNewerVersion(release.TagName, currentVer))
-            {
-                RunOnUiThread(() => ShowUpdateDialog(release, currentVer));
-            }
-            else if (userInitiated)
-            {
-                RunOnUiThread(() => Toast.MakeText(this, $"You are on the latest version ({currentVer})", ToastLength.Short)?.Show());
-            }
-        }
-        catch (Exception ex)
-        {
-            if (userInitiated)
-            {
-                RunOnUiThread(() => Toast.MakeText(this, $"Update check failed: {ex.Message}", ToastLength.Short)?.Show());
-            }
-        }
-    }
-
-    private static bool IsNewerVersion(string latestTag, string currentTag)
-    {
-        var lStr = latestTag.TrimStart('v', 'V').Trim();
-        var cStr = currentTag.TrimStart('v', 'V').Trim();
-
-        if (Version.TryParse(lStr, out var lVer) && Version.TryParse(cStr, out var cVer))
-        {
-            return lVer > cVer;
-        }
-
-        var lParts = lStr.Split('.');
-        var cParts = cStr.Split('.');
-        var len = Math.Max(lParts.Length, cParts.Length);
-        for (var i = 0; i < len; i++)
-        {
-            var lNum = i < lParts.Length && int.TryParse(lParts[i], out var p1) ? p1 : 0;
-            var cNum = i < cParts.Length && int.TryParse(cParts[i], out var p2) ? p2 : 0;
-            if (lNum > cNum) return true;
-            if (lNum < cNum) return false;
-        }
-
-        return string.Compare(latestTag, currentTag, StringComparison.OrdinalIgnoreCase) > 0;
-    }
-
-    private void ShowUpdateDialog(GitHubReleaseInfo release, string currentVer)
-    {
-        var builder = new AlertDialog.Builder(this);
-        var density = Resources?.DisplayMetrics?.Density ?? 1f;
-
-        var scroll = new ScrollView(this);
-        var view = new LinearLayout(this)
-        {
-            Orientation = Orientation.Vertical
-        };
-        view.SetBackgroundColor(LauncherTheme.PopupBackground);
-        view.SetPadding((int)(20 * density), (int)(16 * density), (int)(20 * density), (int)(16 * density));
-
-        var title = new TextView(this)
-        {
-            Text = $"New Update Available: {release.TagName}",
-            TextSize = 16,
-            Typeface = Typeface.DefaultBold
-        };
-        title.SetTextColor(LauncherTheme.NanoGold);
-        title.SetPadding(0, 0, 0, (int)(6 * density));
-        view.AddView(title);
-
-        var verText = new TextView(this)
-        {
-            Text = $"Current: {currentVer}  →  New: {release.TagName}",
-            TextSize = 12
-        };
-        verText.SetTextColor(LauncherTheme.SubText);
-        verText.SetPadding(0, 0, 0, (int)(10 * density));
-        view.AddView(verText);
-
-        if (!string.IsNullOrWhiteSpace(release.Body))
-        {
-            var notesTitle = new TextView(this)
-            {
-                Text = "Changelog:",
-                TextSize = 12,
-                Typeface = Typeface.DefaultBold
-            };
-            notesTitle.SetTextColor(LauncherTheme.Foreground);
-            notesTitle.SetPadding(0, 0, 0, (int)(4 * density));
-            view.AddView(notesTitle);
-
-            var notesText = new TextView(this)
-            {
-                Text = release.Body.Trim(),
-                TextSize = 11
-            };
-            notesText.SetTextColor(LauncherTheme.ForegroundMuted);
-            notesText.SetPadding(0, 0, 0, (int)(12 * density));
-            view.AddView(notesText);
-        }
-
-        var btnRow = new LinearLayout(this)
-        {
-            Orientation = Orientation.Horizontal
-        };
-        btnRow.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
-
-        scroll.AddView(view);
-        builder.SetView(scroll);
-
-        AlertDialog? dialog = null;
-
-        var laterBtn = new Button(this)
-        {
-            Text = "Later",
-            TextSize = 11
-        };
-        laterBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
-        laterBtn.SetTextColor(LauncherTheme.Foreground);
-        var laterLp = new LinearLayout.LayoutParams(0, (int)(36 * density), 1f)
-        {
-            RightMargin = (int)(6 * density)
-        };
-        laterBtn.LayoutParameters = laterLp;
-        laterBtn.Click += (_, _) => dialog?.Dismiss();
-        btnRow.AddView(laterBtn);
-
-        var downloadBtn = new Button(this)
-        {
-            Text = "Download APK",
-            TextSize = 11,
-            Typeface = Typeface.DefaultBold
-        };
-        downloadBtn.Background = LauncherTheme.CreateBox(LauncherTheme.NanoGold, 3);
-        downloadBtn.SetTextColor(Color.ParseColor("#111827"));
-        var downloadLp = new LinearLayout.LayoutParams(0, (int)(36 * density), 1.2f);
-        downloadBtn.LayoutParameters = downloadLp;
-
-        var apkAsset = release.Assets?.FirstOrDefault(a => a.Name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase));
-        var downloadUrl = apkAsset?.BrowserDownloadUrl ?? release.HtmlUrl ?? "https://github.com/SolomonNumb1/space-station-14-mobile/releases/latest";
-
-        downloadBtn.Click += (_, _) =>
-        {
-            dialog?.Dismiss();
-            OpenUrl(downloadUrl);
-        };
-        btnRow.AddView(downloadBtn);
-
-        view.AddView(btnRow);
-
-        dialog = builder.Create();
-        dialog.Show();
-    }
 }

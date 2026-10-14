@@ -1287,7 +1287,7 @@ index 388522f..6d889cf 100644
          event Action<WindowDestroyedEventArgs> DestroyWindow;
  
 diff --git a/Robust.Client/Input/InputManager.cs b/Robust.Client/Input/InputManager.cs
-index 96238a9..e3d81c2 100644
+index 96238a9..7fa535d 100644
 --- a/Robust.Client/Input/InputManager.cs
 +++ b/Robust.Client/Input/InputManager.cs
 @@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
@@ -1298,20 +1298,30 @@ index 96238a9..e3d81c2 100644
  using Robust.Shared.Collections;
  using Robust.Shared.Console;
  using Robust.Shared.ContentPack;
-@@ -229,6 +230,34 @@ namespace Robust.Client.Input
+@@ -222,6 +223,19 @@ namespace Robust.Client.Input
                  return;
              }
  
 +            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsSecondaryActive && args.Key == Key.MouseLeft)
 +            {
-+                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
-+                if (!isUI)
++                // The game viewport is itself a UI control. Only actual widgets
++                // (inventory, chat, touch buttons, popups) should keep a left click.
++                var target = _uiMgr.MouseGetControl(MouseScreenPosition);
++                if (target == null || target is Robust.Client.UserInterface.CustomControls.IViewportControl)
 +                {
 +                    args = new KeyEventArgs(Key.MouseRight, args.IsRepeat, args.Alt, args.Control, args.Shift, args.System, args.ScanCode, args.RawCode);
 +                    MobileControlsOverlay.ResetSecondaryMode();
 +                }
 +            }
 +
++            // Subscribers must see the converted key, not a premature left click.
+             FirstChanceOnKeyEvent?.Invoke(args, args.IsRepeat ? KeyEventType.Repeat : KeyEventType.Down);
+ 
+             if (args.Handled)
+@@ -229,6 +243,24 @@ namespace Robust.Client.Input
+                 return;
+             }
+ 
 +            if (OperatingSystem.IsAndroid() && MobileControlsOverlay.IsExamActive && args.Key == Key.MouseLeft)
 +            {
 +                var isUI = _uiMgr.MouseGetControl(MouseScreenPosition) != null;
@@ -1333,7 +1343,7 @@ index 96238a9..e3d81c2 100644
              _keysPressed[(int) args.Key] = true;
  
              PackedKeyCombo matchedCombo = default;
-@@ -261,9 +290,13 @@ namespace Robust.Client.Input
+@@ -261,9 +293,13 @@ namespace Robust.Client.Input
                      }
                      else if (PackedIsSubPattern(matchedCombo, binding.PackedKeyCombo))
                      {
@@ -1348,7 +1358,7 @@ index 96238a9..e3d81c2 100644
                          }
                          else
                          {
-@@ -321,6 +354,11 @@ namespace Robust.Client.Input
+@@ -321,6 +357,11 @@ namespace Robust.Client.Input
                  return;
              }
  
