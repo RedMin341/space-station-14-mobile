@@ -2620,7 +2620,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "Фобос 276 · 0.1.3";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.4";
 
     public string GetCurrentAppVersion()
     {
@@ -2714,7 +2714,7 @@ public sealed class LauncherActivity : Activity
 
         var msgText = new TextView(this)
         {
-            Text = "Этот порт Space Station 14 для Android — неофициальная модификация, созданная сообществом.\n\n• Эта версия сделана только для сборки «Мёртвый Космос — Фобос». Запуск других проектов и серверных сборок не гарантируется.\n\n• Порт не разработан, не предоставляется и не поддерживается Wizard’s Den или Space Wizards Federation.\n\n• Играйте на свой риск: стабильность, управление и производительность зависят от устройства.\n\n• Не сообщайте о проблемах мобильного клиента (вылетах, низком FPS, ошибках сенсорного управления) через игровой ahelp или сотрудникам и менторам Wizard’s Den.",
+            Text = "Этот порт Space Station 14 для Android — неофициальная модификация, созданная сообществом.\n\nСборка создана на основе Android-билда SolomonNumb1/space-station-14-mobile, от которого сделан этот форк.\nИсходный проект: https://github.com/SolomonNumb1/space-station-14-mobile\n\nРедактировал: Чёрный котик.\n\n• Эта версия сделана только для сборки «Мёртвый Космос — Фобос». Запуск других проектов и серверных сборок не гарантируется.\n\n• Порт не разработан, не предоставляется и не поддерживается Wizard’s Den или Space Wizards Federation.\n\n• Играйте на свой риск: стабильность, управление и производительность зависят от устройства.\n\n• Не сообщайте о проблемах мобильного клиента (вылетах, низком FPS, ошибках сенсорного управления) через игровой ahelp или сотрудникам и менторам Wizard’s Den.",
             TextSize = 12
         };
         msgText.SetTextColor(LauncherTheme.Foreground);
