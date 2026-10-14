@@ -11,6 +11,10 @@ on:
     branches:
       - ss14-fobos-276
 
+concurrency:
+  group: fobos-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     name: Build SS14 Fobos APK
