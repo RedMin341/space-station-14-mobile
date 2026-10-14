@@ -2620,7 +2620,7 @@ public sealed class LauncherActivity : Activity
         catch {}
     }
 
-    public const string CurrentAppVersion = "Фобос 276 · 0.1.6";
+    public const string CurrentAppVersion = "Фобос 276 · 0.1.7";
 
     public string GetCurrentAppVersion()
     {

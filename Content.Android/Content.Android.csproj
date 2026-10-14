@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>io.spacestation14.android</ApplicationId>
-    <ApplicationVersion>7</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1.6</ApplicationDisplayVersion>
+    <ApplicationVersion>8</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.7</ApplicationDisplayVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>NU1701;CA1416</NoWarn>
     <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
@@ -61,6 +61,11 @@
   <PropertyGroup>
     <UseSystemSqlite>True</UseSystemSqlite>
   </PropertyGroup>
+
+  <Target Name="RequirePermanentReleaseSigning" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="'$(AndroidSigningKeyStore)' == ''" Text="Release builds require the permanent Fobos signing key. Debug signing is disabled." />
+    <Error Condition="'$(AndroidSigningKeyAlias)' == '' or '$(AndroidSigningKeyPass)' == '' or '$(AndroidSigningStorePass)' == ''" Text="Release signing credentials are incomplete." />
+  </Target>
 
   <!-- Release signing: one permanent key for all builds so APKs update
        over each other. Passwords/alias come from env (CI secrets). -->
