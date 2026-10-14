@@ -118,7 +118,7 @@ jobs:
         run: dotnet workload install android
 
       - name: Build SS14 Fobos APK
-        run: dotnet build Content.Android/Content.Android.csproj -c Release -p:TargetOS=Android -p:UseSharedCompilation=false
+        run: dotnet build Content.Android/Content.Android.csproj -c Release -p:TargetOS=Android -p:UseSharedCompilation=false -p:AndroidKeyStore=true
         env:
           AndroidSigningKeyStore: ${{ github.workspace }}/Content.Android/release.keystore
           AndroidSigningKeyAlias: ss14mobile
@@ -136,6 +136,16 @@ jobs:
           echo "Found APK at $APK_PATH"
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Sign APK with permanent Fobos key
+        env:
+          APK_PATH: ${{ steps.find_apk.outputs.apk_path }}
+          FOBOS_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          test -n "$APKSIGNER"
+          "$APKSIGNER" sign --ks Content.Android/release.keystore --ks-key-alias ss14mobile --ks-pass env:FOBOS_KEY_PASSWORD --key-pass env:FOBOS_KEY_PASSWORD "$APK_PATH"
+
       - name: Verify APK signing certificate
         env:
           APK_PATH: ${{ steps.find_apk.outputs.apk_path }}
@@ -147,7 +157,7 @@ jobs:
           ACTUAL=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print toupper($2)}' "$RUNNER_TEMP/fobos-apk-signature.txt")
           EXPECTED=$(tr -d '\r\n ' < signing/fobos-certificate.sha256)
           if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "::error::Built APK has an unexpected signing certificate."
+            echo "::error::Built APK has an unexpected signing certificate: $ACTUAL; expected $EXPECTED."
             exit 1
           fi
           echo "APK signature verified: $ACTUAL"
