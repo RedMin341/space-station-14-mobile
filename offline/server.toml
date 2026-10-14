@@ -42,3 +42,7 @@ engine = "sqlite"
 sqlite_dbpath = "offline.db"
 [thread]
 parallel_count = 2
+[log]
+# OfflineServerService captures console output in the app's private files directory.
+enabled = false
+runtimelog = false

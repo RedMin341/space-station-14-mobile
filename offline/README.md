@@ -1,7 +1,7 @@
 # Экспериментальная автономная песочница
 
 Отдельное приложение `io.ss14.touch.sandbox276`. Рабочий клиент Фобоса остаётся установленным.
-Основа: исходный Android-порт в этом репозитории, открытый Fobos content
+Основа: Android-порт https://github.com/SolomonNumb1/space-station-14-mobile, публичный Fobos content
 94c8636c48eb4d5797a5037f00438917f925337b и RobustToolbox 276
 b55b7ecd9d9cfa0ca6c4aaaa419b11d497a3c30b. Редактировал Чёрный Котик.
 

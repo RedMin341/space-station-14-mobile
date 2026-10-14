@@ -85,7 +85,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="resources.zip" />
-    <EmbeddedResource Include="offline.zip" />
+    <AndroidAsset Include="offline.zip" LogicalName="offline.zip" />
     <EmbeddedResource Include="../offline/server.toml" LogicalName="Offline.server.toml" />
     <EmbeddedResource Include="logo-long.png" />
   </ItemGroup>

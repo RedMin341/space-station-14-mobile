@@ -7,7 +7,7 @@ using Content.Android.Launcher.Api;
 
 namespace Content.Android;
 
-[Service(Exported = false, Process = ":sandbox", StopWithTask = true,
+[Service(Exported = false, Process = ":sandbox",
     ForegroundServiceType = global::Android.Content.PM.ForegroundService.TypeDataSync)]
 public sealed class OfflineServerService : Service
 {
@@ -51,6 +51,7 @@ public sealed class OfflineServerService : Service
         var error = Path.Combine(root, "offline-" + run + ".error");
         try
         {
+            Directory.SetCurrentDirectory(root);
             AczClient.InitNative();
             Java.Lang.JavaSystem.LoadLibrary("sqlite3");
             System.Environment.SetEnvironmentVariable("SS14_OFFLINE_SANDBOX", "1");
@@ -76,6 +77,12 @@ public sealed class OfflineServerService : Service
             File.WriteAllText(error, details);
         }
         finally { if (File.Exists(ready)) File.Delete(ready); StopSelf(); }
+    }
+
+    public override void OnTaskRemoved(Intent? rootIntent)
+    {
+        StopSelf();
+        base.OnTaskRemoved(rootIntent);
     }
 
     public override void OnDestroy()

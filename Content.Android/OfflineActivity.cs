@@ -29,7 +29,7 @@ public sealed class OfflineActivity : Activity
             layout.AddView(view);
         }
         Text("КОМНАТА ЧЁРНОГО КОТИКА", 26);
-        Text("Экспериментальная автономная песочница на открытых исходниках Фобоса и исходного Android-порта.\nРедактировал Чёрный Котик. Интернет и аккаунт не нужны. Каждый запуск создаёт новую комнату.");
+        Text("Экспериментальная автономная песочница на публичных исходниках Фобоса и Android-порте SolomonNumb1/space-station-14-mobile.\nРедактировал Чёрный Котик. Интернет и аккаунт не нужны. Каждый запуск создаёт новую комнату.");
         _start = new Button(this) { Text = "Начать тренировку" };
         _start.Click += async (_, _) => await LaunchRoom();
         layout.AddView(_start);
@@ -101,18 +101,21 @@ public sealed class OfflineActivity : Activity
         finally { _launch?.Dispose(); _launch = null; _start.Enabled = true; }
     }
 
-    private static void PrepareResources(string root, CancellationToken cancel)
+    private void PrepareResources(string root, CancellationToken cancel)
     {
         var assembly = typeof(OfflineActivity).Assembly;
         var marker = Path.Combine(root, "offline-resources.version");
-        var version = assembly.ManifestModule.ModuleVersionId.ToString();
+        var version = assembly.ManifestModule.ModuleVersionId + ":" +
+            PackageManager!.GetPackageInfo(PackageName!, global::Android.Content.PM.PackageInfoFlags.MetaData)!.LastUpdateTime;
         if (File.Exists(marker) && File.ReadAllText(marker) == version &&
             File.Exists(Path.Combine(root, "offline.zip")) && File.Exists(Path.Combine(root, "resources.zip"))) return;
         foreach (var (name, target) in new[] { ("Content.Android.resources.zip", "resources.zip"),
                      ("Content.Android.offline.zip", "offline.zip"), ("Offline.server.toml", "offline-server.toml") })
         {
             cancel.ThrowIfCancellationRequested();
-            using var input = assembly.GetManifestResourceStream(name) ?? throw new FileNotFoundException(name);
+            using var input = name == "Content.Android.offline.zip"
+                ? Assets!.Open("offline.zip")
+                : assembly.GetManifestResourceStream(name) ?? throw new FileNotFoundException(name);
             var path = Path.Combine(root, target);
             using (var output = File.Create(path + ".tmp")) input.CopyTo(output);
             File.Move(path + ".tmp", path, true);
