@@ -730,18 +730,32 @@ index cbc2da3..1057f16 100644
              _lightsToRenderList = new (PointLightComponent, Vector2, float , Angle)[value];
              DebugTools.Assert(_maxLights >= _maxShadowcastingLights);
 diff --git a/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs b/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs
-index 8514701..17765dc 100644
+index 8514701..607fed7 100644
 --- a/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs
 +++ b/Robust.Client/Graphics/Clyde/Clyde.Shaders.cs
-@@ -207,6 +207,7 @@ namespace Robust.Client.Graphics.Clyde
+@@ -153,6 +153,9 @@ namespace Robust.Client.Graphics.Clyde
+ 
+         private void LoadStockShaders()
+         {
++            if (OperatingSystem.IsAndroid())
++                _sawmillOgl.Info($"Android lighting compatibility: hardware_srgb={_hasGLSrgb}; GLES sampler precision override enabled={_isGLES}");
++
+             _shaderLibrary = ReadEmbeddedShader("z-library.glsl");
+ 
+             _shaderWrapCodeDefaultFrag = ReadEmbeddedShader("base-default.frag");
+@@ -207,6 +210,11 @@ namespace Robust.Client.Graphics.Clyde
                      versionHeader += "#define NO_ARRAY_PRECISION\n";
                  }
  
-+                versionHeader += "#ifdef FRAGMENT_SHADER\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n#endif\n";
++                // Stage defines are appended AFTER this header. Do not guard
++                // precision declarations with FRAGMENT_SHADER here.
++                // Sampler precision controls the returned texture value: shadow
++                // moments in RG32F exceed the default lowp sampler range on GLES.
++                versionHeader += "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\nprecision highp sampler2D;\n#else\nprecision mediump float;\nprecision mediump sampler2D;\n#endif\n";
              }
  
              if (_hasGLStandardDerivatives)
-@@ -249,9 +250,10 @@ namespace Robust.Client.Graphics.Clyde
+@@ -249,9 +257,10 @@ namespace Robust.Client.Graphics.Clyde
                  }
                  catch (ShaderCompilationException e)
                  {
@@ -754,7 +768,7 @@ index 8514701..17765dc 100644
                  }
  
                  try
-@@ -260,9 +262,10 @@ namespace Robust.Client.Graphics.Clyde
+@@ -260,9 +269,10 @@ namespace Robust.Client.Graphics.Clyde
                  }
                  catch (ShaderCompilationException e)
                  {
@@ -767,7 +781,7 @@ index 8514701..17765dc 100644
                  }
  
                  var program = new GLShaderProgram(this, name);
-@@ -276,8 +279,8 @@ namespace Robust.Client.Graphics.Clyde
+@@ -276,8 +286,8 @@ namespace Robust.Client.Graphics.Clyde
                  catch (ShaderCompilationException e)
                  {
                      program.Delete();
@@ -819,18 +833,23 @@ index 9f14125..16841d6 100644
  using System.Runtime.InteropServices;
  using System.Text;
 diff --git a/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs b/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs
-index 2fe5442..145bef4 100644
+index 2fe5442..3a3e736 100644
 --- a/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs
 +++ b/Robust.Client/Graphics/Clyde/GLContext/GLContextWindow.cs
-@@ -52,7 +52,7 @@ namespace Robust.Client.Graphics.Clyde
+@@ -52,8 +52,11 @@ namespace Robust.Client.Graphics.Clyde
              }
  
              public override bool RequireWindowGL => true;
 -            // ANGLE does not support main window sRGB.
-+            // ANGLE on Windows does not support main window sRGB.
-             public override bool HasBrokenWindowSrgb => Clyde._isGLES && OperatingSystem.IsWindows();
+-            public override bool HasBrokenWindowSrgb => Clyde._isGLES && OperatingSystem.IsWindows();
++            // SDL's GLES window is requested without FRAMEBUFFER_SRGB_CAPABLE.
++            // Android must use Clyde's shader sRGB conversion rather than sending
++            // linear colour directly to that window (which makes the image dark).
++            public override bool HasBrokenWindowSrgb => Clyde._isGLES &&
++                (OperatingSystem.IsWindows() || OperatingSystem.IsAndroid());
  
              public GLContextWindow(Clyde clyde) : base(clyde)
+             {
 diff --git a/Robust.Client/Graphics/Clyde/Shaders/base-default.vert b/Robust.Client/Graphics/Clyde/Shaders/base-default.vert
 index 5195310..6893092 100644
 --- a/Robust.Client/Graphics/Clyde/Shaders/base-default.vert
