@@ -154,9 +154,10 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" > "$RUNNER_TEMP/fobos-apk-signature.txt"
-          ACTUAL=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print toupper($2)}' "$RUNNER_TEMP/fobos-apk-signature.txt")
+          ACTUAL=$(awk -F': ' 'tolower($1) ~ /certificate sha-256 digest$/ {print toupper($2)}' "$RUNNER_TEMP/fobos-apk-signature.txt" | sort -u)
           EXPECTED=$(tr -d '\r\n ' < signing/fobos-certificate.sha256)
           if [ "$ACTUAL" != "$EXPECTED" ]; then
+            cat "$RUNNER_TEMP/fobos-apk-signature.txt"
             echo "::error::Built APK has an unexpected signing certificate: $ACTUAL; expected $EXPECTED."
             exit 1
           fi
