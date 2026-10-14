@@ -44,7 +44,7 @@ index e96212933..f021b89da 100644
      }
  
 diff --git a/Content.Client/UserInterface/Controls/MainViewport.cs b/Content.Client/UserInterface/Controls/MainViewport.cs
-index 5fed437..c4ea5ad 100644
+index 5fed437..72bd8b7 100644
 --- a/Content.Client/UserInterface/Controls/MainViewport.cs
 +++ b/Content.Client/UserInterface/Controls/MainViewport.cs
 @@ -4,6 +4,7 @@ using Content.Shared.CCVar;
@@ -65,24 +65,41 @@ index 5fed437..c4ea5ad 100644
          public MainViewport()
          {
              IoCManager.InjectDependencies(this);
-@@ -31,9 +35,46 @@ namespace Content.Client.UserInterface.Controls
+@@ -29,11 +33,62 @@ namespace Content.Client.UserInterface.Controls
+                 MouseFilter = MouseFilterMode.Stop
+             };
  
-             AddChild(Viewport);
- 
+-            AddChild(Viewport);
 +            if (OperatingSystem.IsAndroid())
-+                AddMobileZoomControls();
-+
++            {
++                // UIWidget is a horizontal BoxContainer. Use a layered Control
++                // so the zoom bar overlays the viewport instead of sitting beside it.
++                var layers = new Control
++                {
++                    HorizontalExpand = true,
++                    VerticalExpand = true,
++                    MouseFilter = MouseFilterMode.Ignore
++                };
++                AddChild(layers);
++                layers.AddChild(Viewport);
++                AddMobileZoomControls(layers);
++            }
++            else
++            {
++                AddChild(Viewport);
++            }
+ 
              _cfg.OnValueChanged(CCVars.ViewportScalingFilterMode, _ => UpdateCfg(), true);
          }
  
-+        private void AddMobileZoomControls()
++        private void AddMobileZoomControls(Control layers)
 +        {
 +            var bar = new BoxContainer
 +            {
 +                Orientation = BoxContainer.LayoutOrientation.Horizontal,
 +                HorizontalAlignment = HAlignment.Center,
 +                VerticalAlignment = VAlignment.Top,
-+                Margin = new Thickness(0, 8, 0, 0),
++                Margin = new Thickness(0, 72, 0, 0),
 +                SeparationOverride = 6,
 +                MouseFilter = MouseFilterMode.Stop
 +            };
@@ -92,7 +109,7 @@ index 5fed437..c4ea5ad 100644
 +            bar.AddChild(zoomOut);
 +            bar.AddChild(reset);
 +            bar.AddChild(zoomIn);
-+            AddChild(bar);
++            layers.AddChild(bar);
 +
 +            void ApplyZoom(int index)
 +            {
@@ -112,7 +129,7 @@ index 5fed437..c4ea5ad 100644
          protected override void EnteredTree()
          {
              base.EnteredTree();
-@@ -59,9 +100,9 @@ namespace Content.Client.UserInterface.Controls
+@@ -59,9 +114,9 @@ namespace Content.Client.UserInterface.Controls
              if (stretch)
              {
                  var snapFactor = CalcSnappingFactor();
