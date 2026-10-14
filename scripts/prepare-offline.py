@@ -72,7 +72,7 @@ for x in range(16):
         if x in (0,15) or y in (0,15): entity('WallSolid',x+.5,y+.5,True)
 for p,x,y,a in [
  ('SpawnPointAnyJob',7.5,7.5,False),('SpawnPointLatejoin',7.5,7.5,False),
- ('DSStationGridAnchor',.5,.5,True),('Table',4.5,6.5,True),('Table',5.5,6.5,True),
+ ('Table',4.5,6.5,True),('Table',5.5,6.5,True),
  ('ClosetTool',3.5,10.5,True),('ClosetMaintenance',4.5,10.5,True),('CrateGeneric',6.5,10.5,False),
  ('ChairOfficeDark',4.5,5.5,False),('Crowbar',4.5,6.5,False),('Wrench',4.5,6.5,False),
  ('Screwdriver',4.5,6.5,False),('Multitool',4.5,6.5,False),('ToolboxElectrical',5.5,6.5,False),
@@ -86,7 +86,7 @@ base=[{'proto':'','entities':[
   {'type':'MapAtmosphere','space':False,'mixture':{'volume':2500,'temperature':293.15,'moles':{'Oxygen':21.824,'Nitrogen':82.103}}},
   {'type':'MapLight','ambientLightColor':'#B0B0B0'}]},
  {'uid':2,'components':[{'type':'Transform','parent':1},{'type':'MapGrid','chunks':{'0,0':{'ind':'0,0','version':7,'tiles':base64.b64encode(struct.pack('<iBBB',1,0,0,0)*256).decode()}}},
- {'type':'Broadphase'},{'type':'Physics','bodyType':'Dynamic'}, {'type':'Fixtures','fixtures':{}},
+ {'type':'Broadphase'},{'type':'Physics','bodyType':'Static'}, {'type':'Fixtures','fixtures':{}},
  {'type':'BecomesStation','id':'OfflineRoom'},{'type':'Gravity'},{'type':'GridPathfinding'},
  {'type':'OccluderTree'},{'type':'ImplicitRoof'}]}]}]
 room={'meta':{'format':7,'category':'Map','engineVersion':'276.0.0','entityCount':2+len(entities)},
