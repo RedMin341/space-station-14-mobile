@@ -79,6 +79,35 @@ for statement, label in [('_loc.LoadCulture(culture);', 'Русские пере
            f'System.Console.WriteLine("[START] {label}");\n            {statement}\n'
            f'            System.Console.WriteLine("[DONE] {label}");')
 
+# Instrument the expensive reflection loops without removing any types or changing parallelism.
+serialization = engine/'Robust.Shared/Serialization/Manager/SerializationManager.cs'
+source = serialization.read_text()
+needle = 'Parallel.ForEach(_reflectionManager.FindAllTypes(), type =>'
+if source.count(needle) != 2:
+    raise RuntimeError('Unexpected serialization reflection loops')
+source = source.replace(needle, 'TraceTypeInitialization("Поиск описаний данных", _reflectionManager.FindAllTypes(), type =>', 1)
+source = source.replace(needle, 'TraceTypeInitialization("Сбор атрибутов типов", _reflectionManager.FindAllTypes(), type =>', 1)
+source = source.replace('Parallel.ForEach(registrations, type =>',
+                        'TraceTypeInitialization("Создание описаний данных", registrations, type =>')
+serialization.write_text(source)
+for statement, label in [
+    ('InitializeFlagsAndConstants(flagsTypes, constantsTypes);', 'Флаги и константы'),
+    ('InitializeTypeSerializers(typeSerializers);', 'Регистрация обработчиков типов'),
+]:
+    change(serialization, statement,
+           f'System.Console.WriteLine("[SERIAL START] {label}");\n            {statement}\n'
+           f'            System.Console.WriteLine("[SERIAL DONE] {label}");')
+change(serialization, 'foreach (var baseType in implicitDataDef)',
+       'System.Console.WriteLine("[SERIAL START] Неявные описания данных");\n            foreach (var baseType in implicitDataDef)')
+change(serialization, '            TraceTypeInitialization("Поиск описаний данных",',
+       '            System.Console.WriteLine("[SERIAL DONE] Неявные описания данных");\n            TraceTypeInitialization("Поиск описаний данных",')
+change(serialization, 'var duplicateErrors = new StringBuilder();',
+       'System.Console.WriteLine("[SERIAL START] Проверка описаний данных");\n            var duplicateErrors = new StringBuilder();')
+change(serialization, '_initialized = true;',
+       'System.Console.WriteLine("[SERIAL DONE] Проверка описаний данных");\n            _initialized = true;')
+(engine/'Robust.Shared/Serialization/Manager/SerializationManager.StartupDiagnostics.cs').write_text(
+    Path('scripts/SerializationManager.StartupDiagnostics.cs').read_text())
+
 console=engine/'Robust.Server/Console/SystemConsoleManager.cs'
 change(console,'Environment.UserInteractive','!OperatingSystem.IsAndroid() && Environment.UserInteractive')
 change(console,'public void UpdateInput()\n        {','public void UpdateInput()\n        {\n            if (OperatingSystem.IsAndroid()) return;')
