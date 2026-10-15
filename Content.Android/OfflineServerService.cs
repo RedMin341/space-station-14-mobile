@@ -121,7 +121,8 @@ public sealed class OfflineServerService : Service
             if (value == '\n')
             {
                 var text = _line.ToString(); _line.Clear();
-                File.AppendAllText(_path, text + "\n");
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"\x1B\[[0-?]*[ -/]*[@-~]", "");
+                File.AppendAllText(_path, "[" + DateTime.UtcNow.ToString("HH:mm:ss.fff") + "] " + text + "\n");
                 if (text.Contains("Server Version ") && text.Contains("-> Ready")) File.WriteAllText(_ready, "ready");
             }
             else _line.Append(value);

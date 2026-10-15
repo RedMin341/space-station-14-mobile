@@ -43,6 +43,42 @@ new='''if (OperatingSystem.IsAndroid() && _modLoader is BaseModLoader androidLoa
             }
             else ''' + old
 change(server,old,new)
+# Paired startup markers identify the exact unfinished stage on a phone.
+# Keep the existing timeout: diagnostics must not disguise a stalled startup.
+startup_stages = [
+    ('_serializer.Initialize();', 'Сетевая сериализация'),
+    ('_loc.Initialize();', 'Менеджер переводов'),
+    ('_loc.AddLoadedToStringSerializer(_stringSerializer);', 'Строки переводов'),
+    ('_config.SetupNetworking();', 'Сетевые настройки'),
+    ('_playerManager.Initialize(MaxPlayers);', 'Менеджер игроков'),
+    ('_placement.Initialize();', 'Размещение объектов'),
+    ('_viewVariables.Initialize();', 'Просмотр переменных'),
+    ('_modLoader.BroadcastRunLevel(ModRunLevel.Init);', 'Инициализация игровых модулей'),
+    ('_entityManager.Initialize();', 'Менеджер сущностей'),
+    ('_mapManager.Initialize();', 'Менеджер карт'),
+    ('_serialization.Initialize();', 'Сериализация игровых данных'),
+    ('ProgramShared.FinishCheckBadFileExtensions(checkBadExtensions);', 'Проверка файлов ресурсов'),
+    ('_prototype.Initialize();', 'Менеджер прототипов'),
+    ('_prototype.LoadDefaultPrototypes();', 'Загрузка прототипов'),
+    ('_refMan.Initialize();', 'Ссылки прототипов'),
+    ('IoCManager.Resolve<ToolshedManager>().Initialize();', 'Инструменты администратора'),
+    ('_consoleHost.Initialize();', 'Консоль'),
+    ('_entityManager.Startup();', 'Запуск сущностей'),
+    ('_mapManager.Startup();', 'Запуск карт'),
+    ('_modLoader.BroadcastRunLevel(ModRunLevel.PostInit);', 'Завершение игровых модулей'),
+]
+for statement, label in startup_stages:
+    change(server, statement,
+           f'System.Console.WriteLine("[START] {label}");\n            {statement}\n'
+           f'            System.Console.WriteLine("[DONE] {label}");')
+# Content.Init loads two large localization bundles. Trace them individually.
+localization = root/'Content.Shared/Localizations/ContentLocalizationManager.cs'
+for statement, label in [('_loc.LoadCulture(culture);', 'Русские переводы'),
+                         ('_loc.LoadCulture(fallbackCulture);', 'Английские переводы')]:
+    change(localization, statement,
+           f'System.Console.WriteLine("[START] {label}");\n            {statement}\n'
+           f'            System.Console.WriteLine("[DONE] {label}");')
+
 console=engine/'Robust.Server/Console/SystemConsoleManager.cs'
 change(console,'Environment.UserInteractive','!OperatingSystem.IsAndroid() && Environment.UserInteractive')
 change(console,'public void UpdateInput()\n        {','public void UpdateInput()\n        {\n            if (OperatingSystem.IsAndroid()) return;')

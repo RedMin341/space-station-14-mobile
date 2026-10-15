@@ -43,18 +43,35 @@ public sealed class OfflineActivity : Activity
             .SetPositiveButton("Понятно", (_, _) => { }).Show();
         layout.AddView(help);
         var logs = new Button(this) { Text = "Журнал запуска комнаты" };
-        logs.Click += (_, _) =>
-        {
-            var path = Path.Combine(Root, "offline-server.log");
-            var text = File.Exists(path) ? File.ReadAllText(path) : "Сервер ещё не запускался.";
-            if (text.Length > 16000) text = text[^16000..];
-            new AlertDialog.Builder(this).SetTitle("Журнал сервера").SetMessage(text)
-                .SetPositiveButton("Закрыть", (_, _) => { }).Show();
-        };
+        logs.Click += (_, _) => ShowServerLog();
         layout.AddView(logs);
         _status = new TextView(this) { Text = "Готово к запуску. Первый запуск распакует встроенные ресурсы.", TextSize = 16 };
         layout.AddView(_status);
         SetContentView(scroll);
+    }
+
+    private string ReadServerLog()
+    {
+        var path = Path.Combine(Root, "offline-server.log");
+        var text = File.Exists(path) ? File.ReadAllText(path) : "Сервер ещё не запускался.";
+        // Stay below Android's clipboard IPC limit even for a very noisy server.
+        return text.Length > 200000 ? "[Последние 200000 символов журнала]\n" + text[^200000..] : text;
+    }
+
+    private void ShowServerLog()
+    {
+        var text = ReadServerLog();
+        var preview = text.Length > 16000 ? "[Показан конец журнала; копирование включает больше строк]\n" + text[^16000..] : text;
+        new AlertDialog.Builder(this).SetTitle("Журнал сервера")
+            .SetMessage(preview)
+            .SetPositiveButton("Закрыть", (_, _) => { })
+            .SetNeutralButton("Обновить", (_, _) => ShowServerLog())
+            .SetNegativeButton("Копировать", (_, _) =>
+            {
+                var clipboard = (global::Android.Content.ClipboardManager)GetSystemService(ClipboardService)!;
+                clipboard.PrimaryClip = ClipData.NewPlainText("Журнал SS14 Песочница", ReadServerLog());
+                Toast.MakeText(this, "Журнал скопирован — вставь его в чат", ToastLength.Long)!.Show();
+            }).Show();
     }
 
     private async Task LaunchRoom()
