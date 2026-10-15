@@ -143,6 +143,12 @@ jobs:
           echo "Found APK at $APK_PATH"
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Verify bundled ARM64 SQLite
+        env:
+          APK_PATH: ${{ steps.find_apk.outputs.apk_path }}
+        run: |
+          python3 scripts/verify-offline-apk.py "$APK_PATH"
+
       - name: Sign APK with permanent Fobos key
         env:
           APK_PATH: ${{ steps.find_apk.outputs.apk_path }}

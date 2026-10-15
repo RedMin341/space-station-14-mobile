@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using Android.App;
 using Android.Content;
@@ -11,6 +12,9 @@ namespace Content.Android;
     ForegroundServiceType = global::Android.Content.PM.ForegroundService.TypeDataSync)]
 public sealed class OfflineServerService : Service
 {
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr SqliteVersion();
+
     private bool _started;
     private const string Channel = "ss14_offline";
     public override IBinder? OnBind(Intent? intent) => null;
@@ -53,7 +57,19 @@ public sealed class OfflineServerService : Service
         {
             Directory.SetCurrentDirectory(root);
             AczClient.InitNative();
-            Java.Lang.JavaSystem.LoadLibrary("sqlite3");
+            // Java System.loadLibrary called through JNI can use the bootstrap loader.
+            // Resolve the app-owned library explicitly for the managed SQLite provider.
+            var sqlitePath = Path.Combine(ApplicationInfo!.NativeLibraryDir!, "libsqlite3.so");
+            if (!File.Exists(sqlitePath))
+                throw new FileNotFoundException("В установленном APK отсутствует SQLite: " + sqlitePath);
+            var sqlite = NativeLibrary.Load(sqlitePath);
+            var provider = Assembly.Load("SQLitePCLRaw.provider.sqlite3");
+            NativeLibrary.SetDllImportResolver(provider, (name, assembly, searchPath) =>
+                name == "sqlite3" || name == "libsqlite3.so" ? sqlite : IntPtr.Zero);
+            var version = Marshal.GetDelegateForFunctionPointer<SqliteVersion>(
+                NativeLibrary.GetExport(sqlite, "sqlite3_libversion"));
+            File.AppendAllText(Path.Combine(root, "offline-server.log"),
+                "\nSQLite loaded: " + Marshal.PtrToStringUTF8(version()) + "\n");
             System.Environment.SetEnvironmentVariable("SS14_OFFLINE_SANDBOX", "1");
             var writer = new ServerLog(Path.Combine(root, "offline-server.log"), ready);
             Console.SetOut(TextWriter.Synchronized(writer));
