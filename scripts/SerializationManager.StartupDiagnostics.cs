@@ -27,7 +27,7 @@ public sealed partial class SerializationManager
         void Report()
         {
             var names = string.Join("; ", active.OrderBy(x => x.Key).Select(x => x.Value).Take(12));
-            Console.WriteLine($"[SERIAL PROGRESS] {phase}: {Volatile.Read(ref completed)}/{Volatile.Read(ref total)}; " +
+            System.Console.WriteLine($"[SERIAL PROGRESS] {phase}: {Volatile.Read(ref completed)}/{Volatile.Read(ref total)}; " +
                 $"elapsed={clock.Elapsed.TotalSeconds:F0}s; managedMB={GC.GetTotalMemory(false) / 1048576}; active=[{names}]");
         }
         // A dedicated thread still reports when thread-pool workers are blocked.
@@ -35,7 +35,7 @@ public sealed partial class SerializationManager
         {
             while (!stop.Wait(TimeSpan.FromSeconds(10))) Report();
         }) { IsBackground = true, Name = "Serialization startup diagnostics" };
-        Console.WriteLine($"[SERIAL START] {phase}");
+        System.Console.WriteLine($"[SERIAL START] {phase}");
         reporter.Start();
         try
         {
@@ -48,13 +48,13 @@ public sealed partial class SerializationManager
                 try { action(type); Interlocked.Increment(ref completed); }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"[SERIAL ERROR] {phase}: {type.FullName}: {e}");
+                    System.Console.WriteLine($"[SERIAL ERROR] {phase}: {type.FullName}: {e}");
                     throw;
                 }
                 finally { active.TryRemove(id, out _); }
             });
             Report();
-            Console.WriteLine($"[SERIAL DONE] {phase}");
+            System.Console.WriteLine($"[SERIAL DONE] {phase}");
         }
         finally
         {
