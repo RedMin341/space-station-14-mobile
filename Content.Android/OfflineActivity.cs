@@ -90,18 +90,31 @@ public sealed class OfflineActivity : Activity
             var root = Root;
             await Task.Run(() => PrepareResources(root, cancel), cancel);
             cancel.ThrowIfCancellationRequested();
+            var progressPath = Path.Combine(root, "offline-progress.txt");
+            File.Delete(progressPath);
             var intent = new Intent(this, typeof(OfflineServerService));
             intent.PutExtra("run", run);
             StartForegroundService(intent);
             _status.Text = "Запускается локальный сервер. Это может занять несколько минут…";
             var ready = Path.Combine(root, "offline-" + run + ".ready");
             var error = Path.Combine(root, "offline-" + run + ".error");
-            var deadline = DateTime.UtcNow.AddMinutes(5);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var wait = new StartupWaitPolicy();
+            string? progress = null;
             while (!File.Exists(ready))
             {
                 cancel.ThrowIfCancellationRequested();
                 if (File.Exists(error)) throw new InvalidOperationException(File.ReadAllText(error));
-                if (DateTime.UtcNow >= deadline) throw new TimeoutException("Сервер не запустился за 5 минут. Открой журнал запуска комнаты.");
+                try
+                {
+                    if (File.Exists(progressPath)) progress = File.ReadAllText(progressPath);
+                }
+                catch (IOException) { /* Retry if the server is replacing the progress snapshot. */ }
+                wait.Observe(progress, clock.Elapsed);
+                var timeout = wait.TimeoutReason(clock.Elapsed);
+                if (timeout != null) throw new TimeoutException(timeout);
+                _status.Text = $"Запуск: {(int)clock.Elapsed.TotalMinutes} мин {clock.Elapsed.Seconds} с.\n" +
+                    (progress ?? "Подготовка сервера…") + "\nПока счётчик растёт, загрузка продолжается.";
                 await Task.Delay(500, cancel);
             }
             cancel.ThrowIfCancellationRequested();

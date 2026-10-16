@@ -121,6 +121,9 @@ jobs:
       - name: Test server cache transfer
         run: dotnet run --project tests/ServerCacheTransfer/ServerCacheTransfer.csproj
 
+      - name: Test startup progress timeout
+        run: dotnet run --project tests/StartupProgress/StartupProgress.csproj
+
       - name: Install Android Workload
         run: dotnet workload install android
 
@@ -179,7 +182,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SS14-Offline-Sandbox-EXPERIMENTAL
+          name: SS14-Offline-Sandbox-${{ steps.ver.outputs.tag }}
           path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 14
 

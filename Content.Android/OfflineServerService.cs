@@ -114,6 +114,7 @@ public sealed class OfflineServerService : Service
         private readonly string _path;
         private readonly string _ready;
         private readonly StringBuilder _line = new();
+        private string? _lastProgress;
         public override Encoding Encoding => Encoding.UTF8;
         public ServerLog(string path, string ready) { _path = path; _ready = ready; File.WriteAllText(path, ""); }
         public override void Write(char value)
@@ -123,6 +124,14 @@ public sealed class OfflineServerService : Service
                 var text = _line.ToString(); _line.Clear();
                 text = System.Text.RegularExpressions.Regex.Replace(text, @"\x1B\[[0-?]*[ -/]*[@-~]", "");
                 File.AppendAllText(_path, "[" + DateTime.UtcNow.ToString("HH:mm:ss.fff") + "] " + text + "\n");
+                var progress = StartupProgress.FromLogLine(text);
+                if (progress != null && progress != _lastProgress)
+                {
+                    var path = Path.Combine(Path.GetDirectoryName(_path)!, "offline-progress.txt");
+                    File.WriteAllText(path + ".tmp", progress);
+                    File.Move(path + ".tmp", path, true);
+                    _lastProgress = progress;
+                }
                 if (text.Contains("Server Version ") && text.Contains("-> Ready")) File.WriteAllText(_ready, "ready");
             }
             else _line.Append(value);
