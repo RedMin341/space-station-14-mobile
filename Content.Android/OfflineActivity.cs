@@ -82,6 +82,7 @@ public sealed class OfflineActivity : Activity
         _start.Enabled = false;
         try
         {
+            Window?.AddFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
             // Each run is a fresh local world. Stop both old isolated processes first.
             StopRoom();
             await Task.Delay(500, cancel);
@@ -128,7 +129,13 @@ public sealed class OfflineActivity : Activity
         }
         catch (System.OperationCanceledException) { StopRoom(); }
         catch (Exception e) { StopRoom(); _status.Text = "Ошибка запуска: " + e.Message; }
-        finally { _launch?.Dispose(); _launch = null; _start.Enabled = true; }
+        finally
+        {
+            Window?.ClearFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
+            _launch?.Dispose();
+            _launch = null;
+            _start.Enabled = true;
+        }
     }
 
     private void PrepareResources(string root, CancellationToken cancel)
@@ -169,6 +176,7 @@ public sealed class OfflineActivity : Activity
     protected override void OnDestroy()
     {
         _launch?.Cancel();
+        Window?.ClearFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
         base.OnDestroy();
     }
 }
