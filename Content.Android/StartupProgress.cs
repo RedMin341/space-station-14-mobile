@@ -7,13 +7,14 @@ internal static class StartupProgress
 {
     public static string? FromLogLine(string line)
     {
-        if (line.StartsWith("[SERIAL PROGRESS] ", StringComparison.Ordinal))
+        if (line.StartsWith("[SERIAL PROGRESS] ", StringComparison.Ordinal) ||
+            line.StartsWith("[PROTO PROGRESS] ", StringComparison.Ordinal))
         {
             // Only completed/total counts extend the deadline, not elapsed time or memory.
             var end = line.IndexOf(';');
             return end < 0 ? null : line[..end];
         }
-        return Regex.IsMatch(line, @"^\[(?:START|DONE|SERIAL START|SERIAL DONE)\] ") ? line : null;
+        return Regex.IsMatch(line, @"^\[(?:START|DONE|SERIAL START|SERIAL DONE|PROTO START)\] ") ? line : null;
     }
 }
 

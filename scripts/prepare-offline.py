@@ -108,6 +108,10 @@ change(serialization, '_initialized = true;',
 (engine/'Robust.Shared/Serialization/Manager/SerializationManager.StartupDiagnostics.cs').write_text(
     Path('scripts/SerializationManager.StartupDiagnostics.cs').read_text())
 
+# Track real completed work throughout the previously silent prototype stage.
+import runpy
+runpy.run_path('scripts/patch-prototype-progress.py')['patch'](engine)
+
 console=engine/'Robust.Server/Console/SystemConsoleManager.cs'
 change(console,'Environment.UserInteractive','!OperatingSystem.IsAndroid() && Environment.UserInteractive')
 change(console,'public void UpdateInput()\n        {','public void UpdateInput()\n        {\n            if (OperatingSystem.IsAndroid()) return;')
