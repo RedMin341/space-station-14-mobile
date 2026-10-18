@@ -2410,7 +2410,18 @@ public sealed class LauncherActivity : Activity
             global::Android.Util.Log.Error("SS14Launcher", $"StartConnectingAsync error: {ex}");
             RunOnUiThread(() =>
             {
-                Toast.MakeText(this, $"Ошибка подключения: {ex.Message}", ToastLength.Long)?.Show();
+                new AlertDialog.Builder(this)
+                    .SetTitle("Ошибка подключения")
+                    .SetMessage(ex.Message)
+                    .SetPositiveButton("Закрыть", (_, _) => { })
+                    .SetNeutralButton("Копировать", (_, _) =>
+                    {
+                        var clipboard = (global::Android.Content.ClipboardManager?)GetSystemService(ClipboardService);
+                        if (clipboard != null)
+                            clipboard.PrimaryClip = ClipData.NewPlainText("Ошибка подключения SS14", ex.Message);
+                        Toast.MakeText(this, "Ошибка скопирована", ToastLength.Short)?.Show();
+                    })
+                    .Show();
             });
         }
     }
