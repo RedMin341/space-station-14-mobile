@@ -111,6 +111,7 @@ change(serialization, '_initialized = true;',
 # Track real completed work throughout the previously silent prototype stage.
 import runpy
 runpy.run_path('scripts/patch-prototype-progress.py')['patch'](engine)
+runpy.run_path('scripts/patch-round-progress.py')['patch'](root)
 
 console=engine/'Robust.Server/Console/SystemConsoleManager.cs'
 change(console,'Environment.UserInteractive','!OperatingSystem.IsAndroid() && Environment.UserInteractive')
