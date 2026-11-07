@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dead-space-server/dead-space-14
-          ref: ba798f9b51b0f9fbb7b9d56cea01ef7411451f0a
+          ref: 28e2afab9ed20a3af35b177eaef318dae1e81fff
           path: space-station-14
           submodules: recursive
 
