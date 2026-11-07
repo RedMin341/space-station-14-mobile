@@ -1,4 +1,5 @@
 name: Build SS14 Fobos Nov 2026
+run-name: Fobos Android 2026-11-07 (${{ github.ref_name }})
 
 on:
   workflow_dispatch:
