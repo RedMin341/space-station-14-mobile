@@ -1,0 +1,140 @@
+name: SS14 Touch - Dead Space compatibility (experimental)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ss14-deadspace-20261107
+    paths:
+      - '.github/workflows/deadspace-android.yml'
+      - 'Content.Android/**'
+      - 'patches/**'
+      - 'scripts/**'
+
+jobs:
+  android-deadspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout SS14 Touch Android sources
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      # Pin the matching Dead Space content and RobustToolbox. Do not use
+      # upstream Space Wizards content: its assemblies are incompatible with
+      # custom Dead Space servers.
+      - name: Checkout Dead Space client and engine
+        uses: actions/checkout@v4
+        with:
+          repository: dead-space-server/dead-space-14
+          ref: 79d515a01eedd5e9511ab031eda176715d4ddd87
+          path: space-station-14
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Check Android engine patch compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd space-station-14/RobustToolbox
+          if ! git apply --check --ignore-whitespace ../../patches/mobile.patch; then
+            echo "::error::Dead Space RobustToolbox is not compatible with the current Android engine patch. Rebase mobile.patch; do not publish an untested APK."
+            exit 1
+          fi
+          git apply --ignore-whitespace --whitespace=nowarn ../../patches/mobile.patch
+
+      - name: Check mobile client patch compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd space-station-14
+          if ! git apply --check --ignore-whitespace ../patches/client-fixes.patch; then
+            echo "::error::Dead Space Content.Client needs a rebased client-fixes.patch. Do not release an APK built against Space Wizards code."
+            exit 1
+          fi
+          git apply --ignore-whitespace --whitespace=nowarn ../patches/client-fixes.patch
+
+      - name: Personal touch client identity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for f in Path("Content.Android").rglob("*"):
+              if f.is_file() and f.suffix in (".cs", ".csproj", ".xml"):
+                  content = f.read_text()
+                  content = content.replace("io.spacestation14.android", "io.ss14.touch.personal")
+                  content = content.replace('Label = "Space Station 14"', 'Label = "SS14 Touch"')
+                  content = content.replace('<string name="app_name">Space Station 14</string>', '<string name="app_name">SS14 Touch</string>')
+                  f.write_text(content)
+          # Keep the existing app ID. Increase Android versionCode so a
+          # correctly signed APK can update the previous installation.
+          p = Path("Content.Android/Content.Android.csproj")
+          source = p.read_text()
+          source = source.replace("<ApplicationVersion>28</ApplicationVersion>", "<ApplicationVersion>29</ApplicationVersion>")
+          source = source.replace("<ApplicationDisplayVersion>1.2.0</ApplicationDisplayVersion>", "<ApplicationDisplayVersion>1.2.1</ApplicationDisplayVersion>")
+          p.write_text(source)
+          PY
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build autoconf automake libtool
+          dotnet workload install android
+
+      - name: Cache native dependencies
+        id: cache-natives
+        uses: actions/cache@v4
+        with:
+          path: Content.Android/lib/arm64-v8a
+          key: deadspace-natives-arm64-${{ hashFiles('scripts/build-native-libs.sh') }}
+
+      - name: Build native dependencies
+        if: steps.cache-natives.outputs.cache-hit != 'true'
+        run: bash scripts/build-native-libs.sh
+
+      # Never silently switch to the debug signing key. Installing an update
+      # requires the exact same keystore/key as the previous SS14 Touch APK.
+      - name: Require existing SS14 Touch signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_B64" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Original SS14 Touch keystore/alias/password secrets must be set. Refusing to sign with a different key."
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > Content.Android/release.keystore
+          test -s Content.Android/release.keystore
+
+      - name: Build experimental APK with existing signature
+        run: dotnet build Content.Android/Content.Android.csproj -c Release
+        env:
+          AndroidSigningKeyStore: release.keystore
+          AndroidSigningKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          AndroidSigningKeyPass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          AndroidSigningStorePass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+
+      - name: Upload experimental APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SS14-Touch-DeadSpace-EXPERIMENTAL
+          path: Content.Android/bin/Release/**/*-Signed.apk
+          retention-days: 14
