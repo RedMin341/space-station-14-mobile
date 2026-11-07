@@ -69,6 +69,13 @@ jobs:
                   content = content.replace('Label = "Space Station 14"', 'Label = "SS14 Touch"')
                   content = content.replace('<string name="app_name">Space Station 14</string>', '<string name="app_name">SS14 Touch</string>')
                   f.write_text(content)
+          # Keep the existing app ID. Increase Android versionCode so a
+          # correctly signed APK can update the previous installation.
+          p = Path("Content.Android/Content.Android.csproj")
+          source = p.read_text()
+          source = source.replace("<ApplicationVersion>28</ApplicationVersion>", "<ApplicationVersion>29</ApplicationVersion>")
+          source = source.replace("<ApplicationDisplayVersion>1.2.0</ApplicationDisplayVersion>", "<ApplicationDisplayVersion>1.2.1</ApplicationDisplayVersion>")
+          p.write_text(source)
           PY
 
       - name: Set up .NET 10
@@ -99,8 +106,30 @@ jobs:
         if: steps.cache-natives.outputs.cache-hit != 'true'
         run: bash scripts/build-native-libs.sh
 
-      - name: Build experimental APK
+      # Never silently switch to the debug signing key. Installing an update
+      # requires the exact same keystore/key as the previous SS14 Touch APK.
+      - name: Require existing SS14 Touch signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_B64" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Original SS14 Touch keystore/alias/password secrets must be set. Refusing to sign with a different key."
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > Content.Android/release.keystore
+          test -s Content.Android/release.keystore
+
+      - name: Build experimental APK with existing signature
         run: dotnet build Content.Android/Content.Android.csproj -c Release
+        env:
+          AndroidSigningKeyStore: release.keystore
+          AndroidSigningKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          AndroidSigningKeyPass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          AndroidSigningStorePass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
       - name: Upload experimental APK
         if: success()
