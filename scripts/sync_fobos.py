@@ -124,7 +124,7 @@ def plan(files, live_engine, live_content, source_engine_sha):
     prep = replace_once(prep, r'(?m)^ENGINE = "[0-9a-f]{40}"$', 'ENGINE = "{}"'.format(source_engine_sha), pp)
     prep = replace_once(prep, r'(?m)^print\(f"Fobos content \{CONTENT\}; engine [^\n]*\)$', 'print(f"Fobos content {{CONTENT}}; engine {} ({{ENGINE}})")'.format(live_engine), pp)
 
-    wf = replace_once(files[wp], r'(?m)^[ \t]+ref: [0-9a-f]{40}, '          ref: ' + live_content, wp)
+    wf = replace_once(files[wp], r'(?m)^[ \t]+ref: [0-9a-f]{40}(?=\n|\Z)', '          ref: ' + live_content, wp)
 
     project = files[cp]
     code = re.search(r"<ApplicationVersion>(\d+)</ApplicationVersion>", project)
