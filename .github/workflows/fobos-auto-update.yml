@@ -2,6 +2,10 @@ name: Auto-update SS14 Fobos 276 Android
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Build SS14 Fobos 276"]
+    branches: [ss14-fobos-276]
+    types: [completed]
   schedule:
     # UTC, every three hours away from the top of the hour.
     - cron: "23 */3 * * *"
@@ -22,6 +26,7 @@ concurrency:
 
 jobs:
   check-live-fobos:
+    if: github.event_name != 'workflow_run'
     name: Check live Fobos; rebuild only on version change
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -46,3 +51,72 @@ jobs:
           echo "Only updates ss14-fobos-276, preserves its package ID, original signing verification and Android controls." >> "$GITHUB_STEP_SUMMARY"
           echo "New server revisions trigger the existing Build SS14 Fobos 276 workflow." >> "$GITHUB_STEP_SUMMARY"
           echo "If server is unreachable or revision/version is unsupported, no APK is published." >> "$GITHUB_STEP_SUMMARY"
+
+  publish-signed-fobos:
+    name: Publish verified Fobos APK to GitHub Releases
+    if: >-
+      github.event_name == 'workflow_run'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_branch == 'ss14-fobos-276'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the exact tested Fobos build
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          submodules: false
+          persist-credentials: false
+
+      - name: Download the signed APK from successful build
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          pattern: SS14-Fobos-*-APK
+          merge-multiple: true
+          path: dist
+
+      - name: Verify signature and prepare release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find dist -type f -name '*-Signed.apk' -print -quit)"
+          test -n "$APK"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/cert.txt"
+          ACTUAL="$(awk -F': ' 'tolower($0) ~ /certificate sha-256 digest:/ {print toupper($NF)}' "$RUNNER_TEMP/cert.txt" | sort -u)"
+          EXPECTED="$(tr -d '[:space:]' < signing/fobos-certificate.sha256)"
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::APK certificate differs from permanent Fobos signature"
+            exit 1
+          fi
+          VERSION="$(grep -oP '<ApplicationDisplayVersion>\K[^<]+' Content.Android/Content.Android.csproj)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=fobos-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Verified original Fobos certificate for version $VERSION"
+
+      - name: Publish persistent APK link
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.release.outputs.apk }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" --title "SS14 Фобос $VERSION (Android)" \
+              --notes "Автоматическая сборка под актуальную версию Фобоса. APK проверен по исходному сертификату. Подключение к серверу и игровой процесс требуют проверки на телефоне."
+          fi
+          echo "Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
