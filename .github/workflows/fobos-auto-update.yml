@@ -1,0 +1,48 @@
+name: Auto-update SS14 Fobos 276 Android
+
+on:
+  workflow_dispatch:
+  schedule:
+    # UTC, every three hours away from the top of the hour.
+    - cron: "23 */3 * * *"
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/fobos-auto-update.yml
+      - scripts/sync_fobos.py
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fobos-276-auto-update
+  cancel-in-progress: false
+
+jobs:
+  check-live-fobos:
+    name: Check live Fobos; rebuild only on version change
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout updater from default branch
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Detect current Fobos engine and content
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/sync_fobos.py
+
+      - name: Explain result
+        if: always()
+        run: |
+          echo "### Fobos Android auto-sync" >> "$GITHUB_STEP_SUMMARY"
+          echo "Checks the live Fobos /info, not upstream master." >> "$GITHUB_STEP_SUMMARY"
+          echo "Only updates ss14-fobos-276, preserves its package ID, original signing verification and Android controls." >> "$GITHUB_STEP_SUMMARY"
+          echo "New server revisions trigger the existing Build SS14 Fobos 276 workflow." >> "$GITHUB_STEP_SUMMARY"
+          echo "If server is unreachable or revision/version is unsupported, no APK is published." >> "$GITHUB_STEP_SUMMARY"
