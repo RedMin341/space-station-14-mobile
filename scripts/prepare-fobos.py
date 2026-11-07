@@ -3,8 +3,8 @@ from pathlib import Path
 import subprocess
 import zipfile
 
-CONTENT = "ba798f9b51b0f9fbb7b9d56cea01ef7411451f0a"
-ENGINE = "b55b7ecd9d9cfa0ca6c4aaaa419b11d497a3c30b"
+CONTENT = "79d515a01eedd5e9511ab031eda176715d4ddd87"
+ENGINE = "3ddb9b0625e34a28e8d96010f2eb68e753c38d50"
 
 for directory, expected in (("space-station-14", CONTENT), ("space-station-14/RobustToolbox", ENGINE)):
     actual = subprocess.check_output(["git", "-C", directory, "rev-parse", "HEAD"], text=True).strip()
@@ -29,4 +29,4 @@ with zipfile.ZipFile("Content.Android/resources.zip", "w", zipfile.ZIP_DEFLATED)
 with zipfile.ZipFile("Content.Android/resources.zip") as z:
     assert z.testzip() is None
     assert any(n.startswith("Shaders/") for n in z.namelist())
-print(f"Fobos content {CONTENT}; engine 276.0.0 ({ENGINE})")
+print(f"Fobos content {CONTENT}; engine commit {ENGINE}")
