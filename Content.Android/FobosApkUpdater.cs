@@ -1,336 +1,260 @@
 using System;
-using System.IO;
-using System.Linq;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Android.App;
 using Android.Content;
-using Android.Content.PM;
-using Android.OS;
-using Android.Provider;
 using Android.Widget;
-using Uri = Android.Net.Uri;
-using Path = System.IO.Path;
 
 namespace Content.Android;
 
 /// <summary>
-/// Checks ONLY published SS14 Fobos releases. The content cache still downloads
-/// normally from the server, so an APK is required only for engine/client updates.
+/// Fobos server content is downloaded by the normal launcher. For an engine
+/// update, find the newest *successfully built* matching Fobos APK artifact,
+/// not a stale, hardcoded GitHub Actions URL.
 /// </summary>
 internal sealed class FobosApkUpdater
 {
-    private const string ReleasesApi =
-        "https://api.github.com/repos/RedMin341/space-station-14-mobile/releases?per_page=30";
-    // SHA256 of the existing *Fobos* signing certificate, not the upstream SS14 APK.
-    private const string CertificateSha256 =
-        "E12FB4788853DBD2E99EB37A219C903E3984AAD952B3FD022EF9D2C8FB0BC78A";
-    private const string Mime = "application/vnd.android.package-archive";
-    private const long MaxSize = 500L * 1024 * 1024;
+    private const string Repository = "RedMin341/space-station-14-mobile";
+    private const string FobosAddress = "ss14://f1.deadspace14.net:1212";
+    private const string RunsApi =
+        "https://api.github.com/repos/" + Repository +
+        "/actions/runs?branch=ss14-fobos-276&per_page=30";
+    private const string ActionsPage =
+        "https://github.com/" + Repository + "/actions/workflows/android-release.yml";
     private static readonly HttpClient Http = new()
     {
-        Timeout = TimeSpan.FromMinutes(12)
+        Timeout = TimeSpan.FromSeconds(18),
     };
 
     private readonly LauncherActivity _activity;
-    private int _working;
-    private string? _readyApk;
+    private readonly Launcher.Api.HubClient _hub = new();
+    private int _busy;
 
-    private sealed record Release(Version Version, string Url, long Size, string? Sha256);
+    private sealed record PublishedApk(Version Version, string Engine, long RunId, long ArtifactId)
+    {
+        public string Url => $"https://github.com/{Repository}/actions/runs/{RunId}/artifacts/{ArtifactId}";
+    }
 
-    internal FobosApkUpdater(LauncherActivity activity) => _activity = activity;
+    internal FobosApkUpdater(LauncherActivity activity)
+    {
+        _activity = activity;
+        Http.DefaultRequestHeaders.UserAgent.ParseAdd("SS14-Fobos-Mobile/1.0");
+        Http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+    }
 
+    /// <summary>Check the live Fobos engine and offer its current APK on launch.</summary>
     internal async Task CheckAsync(bool manual = false)
     {
-        if (Interlocked.Exchange(ref _working, 1) != 0)
-            return;
-
         try
         {
-            _activity.SetUpdateButtonStatus("Проверка…");
-            var latest = await FindLatestReleaseAsync();
-            if (latest == null)
+            var info = await _hub.FetchServerInfoAsync(FobosAddress);
+            if (info?.Build == null || !string.Equals(info.Build.ForkId, FobosBuild.Fork, StringComparison.Ordinal))
             {
                 if (manual)
-                    ToastOnUi("Обновлений Фобоса пока нет");
+                    Toast("Не удалось получить версию сервера Фобос");
                 return;
             }
-
-            var installed = InstalledVersion();
-            if (latest.Version.CompareTo(installed) <= 0)
-            {
-                if (manual)
-                    ToastOnUi("Установлена последняя версия Фобоса: " + installed);
-                return;
-            }
-
-            var downloads = Path.Combine(_activity.FilesDir?.AbsolutePath ??
-                throw new IOException("Не найден каталог приложения"), "updates");
-            Directory.CreateDirectory(downloads);
-            var candidate = Path.Combine(downloads, "FobosUpdate.apk");
-
-            if (File.Exists(candidate))
-            {
-                try
-                {
-                    ValidatePackage(candidate, latest);
-                    _readyApk = candidate;
-                    ShowInstallDialog(latest.Version);
-                    return;
-                }
-                catch
-                {
-                    File.Delete(candidate);
-                }
-            }
-
-            // An updated APK downloads inside this application. No GitHub browser or
-            // manually looking up artifacts; Android still asks before installing.
-            _activity.SetUpdateButtonStatus("Загрузка 0%");
-            await DownloadAsync(latest, candidate);
-            ValidatePackage(candidate, latest);
-            _readyApk = candidate;
-            ShowInstallDialog(latest.Version);
+            await OfferAsync(info.Build.EngineVersion, manual);
         }
         catch (Exception ex)
         {
-            Android.Util.Log.Warn("FobosUpdater", ex.ToString());
+            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
             if (manual)
-                ShowError(ex.Message);
-            else
-                ToastOnUi("Проверка обновлений Фобоса не удалась");
-        }
-        finally
-        {
-            _activity.SetUpdateButtonStatus(_readyApk != null ? "Установить" : "Обновить");
-            Interlocked.Exchange(ref _working, 0);
+                Toast("Не удалось проверить обновления. Проверь интернет.");
         }
     }
 
-    internal void InstallReadyOrCheck()
+    /// <summary>Invoked by the connection screen on an incompatible engine.</summary>
+    internal Task OfferForServerAsync(string? serverEngine) =>
+        OfferAsync(serverEngine, manual: true);
+
+    private async Task OfferAsync(string? targetEngine, bool manual)
     {
-        if (_readyApk != null && File.Exists(_readyApk))
+        if (string.IsNullOrWhiteSpace(targetEngine))
         {
-            try
-            {
-                // Validate again before invoking Android's installer.
-                ValidatePackage(_readyApk, null);
-                Install(_readyApk);
-                return;
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex.Message);
-                return;
-            }
-        }
-
-        _ = CheckAsync(manual: true);
-    }
-
-    private Version InstalledVersion()
-    {
-        var version = _activity.PackageManager?.GetPackageInfo(_activity.PackageName!, 0)?.VersionName;
-        return Version.TryParse(version?.TrimStart('v', 'V'), out var parsed)
-            ? parsed
-            : new Version(0, 0, 0);
-    }
-
-    private async Task<Release?> FindLatestReleaseAsync()
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesApi);
-        request.Headers.UserAgent.ParseAdd("SS14-Fobos-Android-Updater/1.0");
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Release? result = null;
-
-        foreach (var item in document.RootElement.EnumerateArray())
-        {
-            if (item.TryGetProperty("draft", out var draft) && draft.GetBoolean())
-                continue;
-            if (item.TryGetProperty("prerelease", out var pre) && pre.GetBoolean())
-                continue;
-            var tag = item.GetProperty("tag_name").GetString();
-            if (tag == null || !tag.StartsWith("fobos-v", StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (!Version.TryParse(tag.Substring("fobos-v".Length), out var version))
-                continue;
-            if (!item.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
-                continue;
-
-            foreach (var asset in assets.EnumerateArray())
-            {
-                if (!asset.TryGetProperty("name", out var nameEl) ||
-                    !nameEl.GetString()!.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var url = asset.GetProperty("browser_download_url").GetString();
-                if (!Uri.TryCreate(url, UriKind.Absolute, out var parsedUrl) ||
-                    parsedUrl.Scheme != "https" ||
-                    parsedUrl.Host != "github.com")
-                    continue;
-                var size = asset.GetProperty("size").GetInt64();
-                if (size <= 0 || size > MaxSize)
-                    continue;
-                string? checksum = null;
-                if (asset.TryGetProperty("digest", out var digestEl) &&
-                    digestEl.ValueKind == JsonValueKind.String)
-                {
-                    var digest = digestEl.GetString();
-                    if (digest != null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
-                        checksum = digest.Substring("sha256:".Length);
-                }
-
-                var candidate = new Release(version, url!, size, checksum);
-                if (result == null || candidate.Version.CompareTo(result.Version) > 0)
-                    result = candidate;
-            }
-        }
-
-        return result;
-    }
-
-    private async Task DownloadAsync(Release release, string destination)
-    {
-        var temporary = destination + ".part";
-        if (File.Exists(temporary))
-            File.Delete(temporary);
-
-        try
-        {
-            using var req = new HttpRequestMessage(HttpMethod.Get, release.Url);
-            req.Headers.UserAgent.ParseAdd("SS14-Fobos-Android-Updater/1.0");
-            using var response = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-            if (response.Content.Headers.ContentLength is long len &&
-                (len > MaxSize || len != release.Size))
-                throw new IOException("Размер APK отличается от опубликованного");
-
-            using var source = await response.Content.ReadAsStreamAsync();
-            await using (var output = File.Open(temporary, FileMode.CreateNew, FileAccess.Write))
-            {
-                var buffer = new byte[128 * 1024];
-                long total = 0;
-                int read;
-                int lastPercent = -1;
-                while ((read = await source.ReadAsync(buffer)) > 0)
-                {
-                    total += read;
-                    if (total > MaxSize)
-                        throw new IOException("APK превышает допустимый размер");
-                    await output.WriteAsync(buffer.AsMemory(0, read));
-                    var percent = (int)Math.Min(100, total * 100 / release.Size);
-                    if (percent != lastPercent && percent % 5 == 0)
-                    {
-                        _activity.SetUpdateButtonStatus("Загрузка " + percent + "%");
-                        lastPercent = percent;
-                    }
-                }
-                if (total != release.Size)
-                    throw new IOException("Загрузка APK завершилась раньше времени");
-            }
-
-            if (!string.IsNullOrWhiteSpace(release.Sha256))
-            {
-                await using var file = File.OpenRead(temporary);
-                var actualHash = Convert.ToHexString(await SHA256.HashDataAsync(file));
-                if (!actualHash.Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException("Контрольная сумма APK не совпадает");
-            }
-            // Validate before publishing the download into the visible update slot.
-            ValidatePackage(temporary, release);
-            File.Move(temporary, destination, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temporary))
-                File.Delete(temporary);
-        }
-    }
-
-    private void ValidatePackage(string filename, Release? release)
-    {
-        var pm = _activity.PackageManager ?? throw new IOException("Android PackageManager недоступен");
-        var flags = Build.VERSION.SdkInt >= BuildVersionCodes.P
-            ? PackageInfoFlags.SigningCertificates : PackageInfoFlags.Signatures;
-        var archive = pm.GetPackageArchiveInfo(filename, flags)
-            ?? throw new IOException("Загруженный APK не распознан Android");
-
-        if (!string.Equals(archive.PackageName, _activity.PackageName, StringComparison.Ordinal))
-            throw new IOException("Это APK другого приложения, установка заблокирована");
-        var installedCode = pm.GetPackageInfo(_activity.PackageName!, 0)?.VersionCode ?? 0;
-        if (archive.VersionCode <= installedCode)
-            throw new IOException("APK старее или совпадает с установленным");
-
-        if (release != null && !Version.TryParse(archive.VersionName, out var archiveVersion))
-            throw new IOException("В APK отсутствует версия приложения");
-        if (release != null && archiveVersion!.CompareTo(release.Version) != 0)
-            throw new IOException("Версия APK отличается от опубликованной");
-
-        Android.Content.PM.Signature[]? signatures = Build.VERSION.SdkInt >= BuildVersionCodes.P
-            ? archive.SigningInfo?.GetApkContentsSigners()
-            : archive.Signatures;
-        if (signatures is not { Length: 1 })
-            throw new IOException("У APK нет ожидаемой цифровой подписи");
-
-        var digest = Convert.ToHexString(SHA256.HashData(signatures[0].ToByteArray()));
-        if (!digest.Equals(CertificateSha256, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("Цифровая подпись не совпадает с исходной подписью Фобоса");
-    }
-
-    private void ShowInstallDialog(Version version)
-    {
-        _activity.RunOnUiThread(() =>
-        {
-            new AlertDialog.Builder(_activity)
-                .SetTitle("SS14 Фобос: обновление готово")
-                .SetMessage($"Версия {version} скачана и проверена. Установить поверх текущего Фобоса? Настройки останутся на месте.")
-                .SetPositiveButton("Установить", (_, _) => InstallReadyOrCheck())
-                .SetNegativeButton("Позже", (_, _) => { })
-                .Show();
-        });
-    }
-
-    private void Install(string filename)
-    {
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.O &&
-            _activity.PackageManager?.CanRequestPackageInstalls() == false)
-        {
-            _activity.RunOnUiThread(() =>
-                new AlertDialog.Builder(_activity)
-                    .SetTitle("Разрешить обновления Фобоса")
-                    .SetMessage("Разреши установку APK из этого приложения, затем вернись и нажми «Установить». Android всё равно попросит подтверждение установки.")
-                    .SetPositiveButton("Настройки", (_, _) =>
-                    {
-                        var permission = new Intent(Settings.ActionManageUnknownAppSources,
-                            Uri.Parse("package:" + _activity.PackageName));
-                        _activity.StartActivity(permission);
-                    })
-                    .SetNegativeButton("Отмена", (_, _) => { })
-                    .Show());
+            if (manual)
+                Toast("Фобос не сообщил версию движка");
             return;
         }
 
-        var content = Uri.Parse("content://" + _activity.PackageName + ".updates/latest.apk");
-        var intent = new Intent(Intent.ActionView);
-        intent.SetDataAndType(content, Mime);
-        intent.AddFlags(ActivityFlags.GrantReadUriPermission);
-        _activity.StartActivity(intent);
+        if (Interlocked.Exchange(ref _busy, 1) != 0)
+            return;
+        try
+        {
+            var apk = await FindLatestCompatibleAsync(targetEngine);
+            var local = GetInstalledVersion();
+            if (apk != null && apk.Version > local)
+            {
+                ShowDownload(apk, targetEngine);
+            }
+            else if (manual || targetEngine != FobosBuild.Engine)
+            {
+                var text = targetEngine != FobosBuild.Engine
+                    ? $"Сервер обновился до RobustToolbox {targetEngine}. Подходящего готового APK пока нет. Не скачивай старые сборки: GitHub собирает новую автоматически."
+                    : $"Готового обновления новее {local} пока нет.";
+                _activity.RunOnUiThread(() =>
+                    new AlertDialog.Builder(_activity)
+                        .SetTitle("SS14 Фобос 276")
+                        .SetMessage(text)
+                        .SetPositiveButton("Сборки GitHub", (_, _) => Open(ActionsPage))
+                        .SetNegativeButton("Закрыть", (_, _) => { })
+                        .Show());
+            }
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+            if (manual)
+                _activity.RunOnUiThread(() =>
+                    new AlertDialog.Builder(_activity)
+                        .SetTitle("Не удалось проверить APK")
+                        .SetMessage("GitHub недоступен или ограничил запросы. " +
+                                    "Открой сборки вручную, если обновление сервера уже вышло.")
+                        .SetPositiveButton("GitHub", (_, _) => Open(ActionsPage))
+                        .SetNegativeButton("Закрыть", (_, _) => { })
+                        .Show());
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _busy, 0);
+        }
     }
 
-    private void ToastOnUi(string message)
-        => _activity.RunOnUiThread(() =>
-            Toast.MakeText(_activity, message, ToastLength.Long)?.Show());
+    private async Task<PublishedApk?> FindLatestCompatibleAsync(string engineVersion)
+    {
+        using var json = JsonDocument.Parse(await Http.GetStringAsync(RunsApi));
+        if (!json.RootElement.TryGetProperty("workflow_runs", out var runs) ||
+            runs.ValueKind != JsonValueKind.Array)
+            return null;
 
-    private void ShowError(string message)
-        => _activity.RunOnUiThread(() =>
+        PublishedApk? best = null;
+        foreach (var run in runs.EnumerateArray())
+        {
+            if (!IsText(run, "name", "Build SS14 Fobos 276") ||
+                !IsText(run, "status", "completed") ||
+                !IsText(run, "conclusion", "success") ||
+                !IsText(run, "head_branch", "ss14-fobos-276"))
+                continue;
+            if (!run.TryGetProperty("id", out var runIdElement) ||
+                !run.TryGetProperty("head_sha", out var shaElement))
+                continue;
+
+            var sha = shaElement.GetString();
+            if (sha == null || !Regex.IsMatch(sha, @"\A[0-9a-f]{40}\z"))
+                continue;
+
+            // Never offer a successful APK compiled for a *different* engine.
+            // Read the exact source revision used by this GitHub Actions run.
+            var sourceUrl = $"https://raw.githubusercontent.com/{Repository}/{sha}/Content.Android/FobosBuild.cs";
+            var buildSource = await Http.GetStringAsync(sourceUrl);
+            var engineMatch = Regex.Match(buildSource,
+                "public const string Engine\\s*=\\s*\"([^\"]+)\"");
+            if (!engineMatch.Success || engineMatch.Groups[1].Value != engineVersion)
+                continue;
+
+            var runId = runIdElement.GetInt64();
+            var artifactApi = $"https://api.github.com/repos/{Repository}/actions/runs/{runId}/artifacts?per_page=100";
+            using var artifactsJson = JsonDocument.Parse(await Http.GetStringAsync(artifactApi));
+            if (!artifactsJson.RootElement.TryGetProperty("artifacts", out var artifacts) ||
+                artifacts.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var artifact in artifacts.EnumerateArray())
+            {
+                if (artifact.TryGetProperty("expired", out var expired) && expired.GetBoolean())
+                    continue;
+                if (!artifact.TryGetProperty("name", out var artifactName))
+                    continue;
+                var name = artifactName.GetString();
+                if (string.IsNullOrEmpty(name) ||
+                    !name.StartsWith("SS14-Fobos-v", StringComparison.OrdinalIgnoreCase) ||
+                    !name.EndsWith("-APK", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var versionText = name.Substring(
+                    "SS14-Fobos-v".Length,
+                    name.Length - "SS14-Fobos-v".Length - "-APK".Length);
+                if (!Version.TryParse(versionText, out var version) ||
+                    !artifact.TryGetProperty("id", out var artifactIdElement))
+                    continue;
+                var candidate = new PublishedApk(version, engineVersion,
+                    runId, artifactIdElement.GetInt64());
+                if (best == null || candidate.Version > best.Version)
+                    best = candidate;
+            }
+
+            // GitHub lists runs in reverse chronological order. The first
+            // compatible successful run is sufficient unless a better artifact
+            // was already found among its outputs.
+            if (best != null)
+                return best;
+        }
+        return best;
+    }
+
+    private static bool IsText(JsonElement element, string name, string value) =>
+        element.TryGetProperty(name, out var field) &&
+        string.Equals(field.GetString(), value, StringComparison.Ordinal);
+
+    private Version GetInstalledVersion()
+    {
+        try
+        {
+            var installed = _activity.PackageManager?.GetPackageInfo(_activity.PackageName!, 0);
+            if (Version.TryParse(installed?.VersionName?.TrimStart('v', 'V'), out var version))
+                return version;
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+        }
+        return new Version(0, 0, 0);
+    }
+
+    private void ShowDownload(PublishedApk apk, string targetEngine)
+    {
+        _activity.RunOnUiThread(() =>
             new AlertDialog.Builder(_activity)
-                .SetTitle("Обновление Фобоса")
-                .SetMessage(message)
-                .SetPositiveButton("Закрыть", (_, _) => { })
+                .SetTitle("Обновление SS14 Фобос готово!")
+                .SetMessage(
+                    $"Новая версия: {apk.Version}\n" +
+                    $"Движок: {targetEngine}\n\n" +
+                    "Нажми «Скачать APK», чтобы открыть именно новую сборку в GitHub Actions. " +
+                    "После загрузки Android попросит подтвердить установку. " +
+                    "Для скачивания артефактов GitHub может понадобиться вход в аккаунт.")
+                .SetPositiveButton("Скачать APK", (_, _) => Open(apk.Url))
+                .SetNeutralButton("Скопировать ссылку", (_, _) => CopyLink(apk.Url))
+                .SetNegativeButton("Позже", (_, _) => { })
                 .Show());
+    }
+
+    private void Open(string url)
+    {
+        try
+        {
+            _activity.StartActivity(
+                new Intent(Intent.ActionView, Android.Net.Uri.Parse(url)));
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+            CopyLink(url);
+        }
+    }
+
+    private void CopyLink(string url)
+    {
+        var clipboard = (Android.Content.ClipboardManager?)
+            _activity.GetSystemService(Context.ClipboardService);
+        if (clipboard != null)
+            clipboard.PrimaryClip = ClipData.NewPlainText("SS14 Фобос APK", url);
+        Toast("Ссылка на APK скопирована");
+    }
+
+    private void Toast(string message) =>
+        _activity.RunOnUiThread(() =>
+            Toast.MakeText(_activity, message, ToastLength.Long)?.Show());
 }
