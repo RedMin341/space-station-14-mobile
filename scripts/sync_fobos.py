@@ -118,7 +118,7 @@ def plan(files, live_engine, live_content, source_engine_sha):
     prep = files[pp]
     prep = replace_once(prep, r'(?m)^CONTENT = "[0-9a-f]{40}"$', 'CONTENT = "{}"'.format(live_content), pp)
     prep = replace_once(prep, r'(?m)^ENGINE = "[0-9a-f]{40}"$', 'ENGINE = "{}"'.format(source_engine_sha), pp)
-    prep = replace_once(prep, r'(?m)^print\(f"Fobos content \{CONTENT\}; engine [^\n]*\)$', 'print(f"Fobos content {CONTENT}; engine {} ({{ENGINE}})")'.format(live_engine), pp)
+    prep = replace_once(prep, r'(?m)^print\(f"Fobos content \{CONTENT\}; engine [^\n]*\)$', 'print(f"Fobos content {{CONTENT}}; engine {} ({{ENGINE}})")'.format(live_engine), pp)
 
     wf = replace_once(files[wp], r'(?m)^\s+ref: [0-9a-f]{40}$', '          ref: ' + live_content, wp)
 
