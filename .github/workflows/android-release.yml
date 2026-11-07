@@ -1,4 +1,4 @@
-name: Build SS14 Fobos 276
+name: Build SS14 Fobos Nov 2026
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         default: ''
   push:
     branches:
-      - ss14-fobos-276
+      - ss14-fobos-20261107
 
 concurrency:
   group: fobos-android-${{ github.ref }}
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Build SS14 Fobos APK
+    name: Build SS14 Fobos APK (Nov 2026)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dead-space-server/dead-space-14
-          ref: ba798f9b51b0f9fbb7b9d56cea01ef7411451f0a
+          ref: 79d515a01eedd5e9511ab031eda176715d4ddd87
           path: space-station-14
           submodules: recursive
 
