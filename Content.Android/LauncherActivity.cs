@@ -54,7 +54,8 @@ public sealed class LauncherActivity : Activity
     {
         Servers,
         Favorites,
-        DirectConnect
+        DirectConnect,
+        Changes
     }
 
     private readonly LauncherStorage _storage = new();
@@ -71,6 +72,8 @@ public sealed class LauncherActivity : Activity
     private Button _tabServersBtn = default!;
     private Button _tabFavsBtn = default!;
     private Button _tabDirectBtn = default!;
+    private Button _tabChangesBtn = default!;
+    private View _tableHeaderRow = default!;
     private EditText _searchInput = default!;
     private TextView _statusCountText = default!;
     private LinearLayout _listLayout = default!;
@@ -253,14 +256,17 @@ public sealed class LauncherActivity : Activity
         _tabServersBtn = CreateTabButton("Серверы", true);
         _tabFavsBtn = CreateTabButton("Избранное", false);
         _tabDirectBtn = CreateTabButton("По адресу", false);
+        _tabChangesBtn = CreateTabButton("Изменения", false);
 
         _tabServersBtn.Click += (_, _) => SwitchTab(Tab.Servers);
         _tabFavsBtn.Click += (_, _) => SwitchTab(Tab.Favorites);
         _tabDirectBtn.Click += (_, _) => SwitchTab(Tab.DirectConnect);
+        _tabChangesBtn.Click += (_, _) => SwitchTab(Tab.Changes);
 
         controlsRow.AddView(_tabServersBtn);
         controlsRow.AddView(_tabFavsBtn);
         controlsRow.AddView(_tabDirectBtn);
+        controlsRow.AddView(_tabChangesBtn);
 
         var tabSpacer = new View(this);
         tabSpacer.LayoutParameters = new LinearLayout.LayoutParams((int)(12 * density), ViewGroup.LayoutParams.MatchParent);
@@ -354,6 +360,7 @@ public sealed class LauncherActivity : Activity
         tableHeader.AddView(thTime);
         tableHeader.AddView(thPlayers);
         tableHeader.AddView(thAction);
+        _tableHeaderRow = tableHeader;
         mainLayout.AddView(tableHeader);
 
         _scroll = new ScrollView(this)
@@ -617,7 +624,22 @@ public sealed class LauncherActivity : Activity
         ApplyTabStyle(_tabServersBtn, tab == Tab.Servers);
         ApplyTabStyle(_tabFavsBtn, tab == Tab.Favorites);
         ApplyTabStyle(_tabDirectBtn, tab == Tab.DirectConnect);
+        ApplyTabStyle(_tabChangesBtn, tab == Tab.Changes);
+        var changes = tab == Tab.Changes;
+        _tableHeaderRow.Visibility = changes ? ViewStates.Gone : ViewStates.Visible;
+        _searchInput.Visibility = changes ? ViewStates.Gone : ViewStates.Visible;
+        _filterBtn.Visibility = changes ? ViewStates.Gone : ViewStates.Visible;
+        _filtersPanel.Visibility = !changes && _filtersVisible ? ViewStates.Visible : ViewStates.Gone;
         RenderServerList();
+        if (changes)
+            _ = _fobosUpdater.CheckAsync(manual: false, offerPopup: false);
+    }
+
+    // Called on the UI thread when the current GitHub update status changes.
+    internal void RefreshUpdatesTab()
+    {
+        if (_activeTab == Tab.Changes && _listLayout != null)
+            RenderServerList();
     }
 
     private void UpdateAccountButton()
@@ -666,6 +688,12 @@ public sealed class LauncherActivity : Activity
     {
         _listLayout.RemoveAllViews();
         var density = Resources?.DisplayMetrics?.Density ?? 1f;
+
+        if (_activeTab == Tab.Changes)
+        {
+            RenderChangesView(density);
+            return;
+        }
 
         if (_activeTab == Tab.DirectConnect)
         {
@@ -751,6 +779,64 @@ public sealed class LauncherActivity : Activity
             _listLayout.AddView(row);
             idx++;
         }
+    }
+
+    private void RenderChangesView(float density)
+    {
+        var content = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        content.SetPadding((int)(22 * density), (int)(14 * density),
+            (int)(22 * density), (int)(14 * density));
+
+        void AddText(string value, int size, bool accent = false)
+        {
+            var label = new TextView(this)
+            {
+                Text = value,
+                TextSize = size
+            };
+            label.SetTextColor(accent ? LauncherTheme.NanoGold : LauncherTheme.Foreground);
+            label.SetPadding(0, 0, 0, (int)(10 * density));
+            content.AddView(label);
+        }
+
+        AddText("ИЗМЕНЕНИЯ · SS14 ФОБОС 276", 19, true);
+        AddText("Установлена: v" + _fobosUpdater.InstalledVersion +
+            "    |    Движок в APK: " + FobosBuild.Engine, 13);
+        AddText("Движок сервера: " + _fobosUpdater.TargetEngine, 13);
+        AddText(_fobosUpdater.StatusText, 16, true);
+        AddText("Что изменилось", 17, true);
+        AddText(_fobosUpdater.ReleaseNotes, 13);
+
+        var checkBtn = new Button(this) { Text = "↻ Проверить обновления", TextSize = 12 };
+        checkBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 4);
+        checkBtn.SetTextColor(LauncherTheme.Foreground);
+        checkBtn.Click += (_, _) => _ = _fobosUpdater.CheckAsync(manual: false, offerPopup: false);
+        content.AddView(checkBtn);
+
+        if (!string.IsNullOrWhiteSpace(_fobosUpdater.DownloadUrl))
+        {
+            var downloadBtn = new Button(this)
+            {
+                Text = "Скачать новую версию v" + _fobosUpdater.LatestVersion,
+                TextSize = 14,
+                Typeface = Typeface.DefaultBold
+            };
+            downloadBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 4);
+            downloadBtn.SetTextColor(Color.White);
+            downloadBtn.Click += (_, _) => _fobosUpdater.OpenLatest();
+            content.AddView(downloadBtn);
+
+            AddText("Ссылка откроет свежий артефакт APK в GitHub Actions. " +
+                "Для скачивания может потребоваться вход в GitHub. " +
+                "Android предложит подтвердить установку.", 11);
+        }
+        else
+        {
+            AddText("Когда сборка APK будет готова, кнопка скачивания появится здесь автоматически.", 11);
+        }
+
+        _listLayout.AddView(content);
+        _statusCountText.Text = "Обновления Фобоса";
     }
 
     private View CreateServerTableRow(ServerListEntry server, bool alternate, float density)
