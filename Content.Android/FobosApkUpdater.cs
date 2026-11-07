@@ -54,16 +54,16 @@ internal sealed class FobosApkUpdater
             if (info?.Build == null || !string.Equals(info.Build.ForkId, FobosBuild.Fork, StringComparison.Ordinal))
             {
                 if (manual)
-                    Toast("Не удалось получить версию сервера Фобос");
+                    ShowToast("Не удалось получить версию сервера Фобос");
                 return;
             }
             await OfferAsync(info.Build.EngineVersion, manual);
         }
         catch (Exception ex)
         {
-            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+            global::Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
             if (manual)
-                Toast("Не удалось проверить обновления. Проверь интернет.");
+                ShowToast("Не удалось проверить обновления. Проверь интернет.");
         }
     }
 
@@ -76,7 +76,7 @@ internal sealed class FobosApkUpdater
         if (string.IsNullOrWhiteSpace(targetEngine))
         {
             if (manual)
-                Toast("Фобос не сообщил версию движка");
+                ShowToast("Фобос не сообщил версию движка");
             return;
         }
 
@@ -106,7 +106,7 @@ internal sealed class FobosApkUpdater
         }
         catch (Exception ex)
         {
-            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+            global::Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
             if (manual)
                 _activity.RunOnUiThread(() =>
                     new AlertDialog.Builder(_activity)
@@ -209,7 +209,7 @@ internal sealed class FobosApkUpdater
         }
         catch (Exception ex)
         {
-            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+            global::Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
         }
         return new Version(0, 0, 0);
     }
@@ -236,25 +236,25 @@ internal sealed class FobosApkUpdater
         try
         {
             _activity.StartActivity(
-                new Intent(Intent.ActionView, Android.Net.Uri.Parse(url)));
+                new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(url)));
         }
         catch (Exception ex)
         {
-            Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
+            global::Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
             CopyLink(url);
         }
     }
 
     private void CopyLink(string url)
     {
-        var clipboard = (Android.Content.ClipboardManager?)
-            _activity.GetSystemService(Context.ClipboardService);
+        var clipboard = (global::Android.Content.ClipboardManager?)
+            _activity.GetSystemService(global::Android.Content.Context.ClipboardService);
         if (clipboard != null)
             clipboard.PrimaryClip = ClipData.NewPlainText("SS14 Фобос APK", url);
-        Toast("Ссылка на APK скопирована");
+        ShowToast("Ссылка на APK скопирована");
     }
 
-    private void Toast(string message) =>
+    private void ShowToast(string message) =>
         _activity.RunOnUiThread(() =>
-            Toast.MakeText(_activity, message, ToastLength.Long)?.Show());
+            global::Android.Widget.Toast.MakeText(_activity, message, global::Android.Widget.ToastLength.Long)?.Show());
 }
