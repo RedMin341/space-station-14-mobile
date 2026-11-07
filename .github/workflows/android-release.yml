@@ -10,6 +10,9 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - .github/workflows/fobos-auto-update.yml
+      - scripts/sync_fobos.py
     tags:
       - 'v*'
 
