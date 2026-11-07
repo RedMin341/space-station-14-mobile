@@ -4,8 +4,8 @@ namespace Content.Android;
 
 internal static class FobosBuild
 {
-    public const string Engine = "276.0.0";
-    public const string ContentRevision = "ba798f9b51b0f9fbb7b9d56cea01ef7411451f0a";
+    public const string Engine = "276.0.6";
+    public const string ContentRevision = "28e2afab9ed20a3af35b177eaef318dae1e81fff";
     public const string Fork = "dsfobos";
 
     public static bool Matches(ServerBuildInfo? build) => build != null
