@@ -61,6 +61,7 @@ public sealed class LauncherActivity : Activity
     private readonly HubClient _hubClient = new();
     private readonly AuthClient _authClient = new();
     private readonly AczClient _aczClient = new();
+    private FobosApkUpdater _fobosUpdater = default!;
 
     private List<ServerListEntry> _servers = new();
     private Tab _activeTab = Tab.Servers;
@@ -97,6 +98,7 @@ public sealed class LauncherActivity : Activity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        _fobosUpdater = new FobosApkUpdater(this);
         AczClient.InitNative();
 
         if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu)
@@ -119,7 +121,10 @@ public sealed class LauncherActivity : Activity
         {
             ShowDisclaimerDialog();
         }
-        
+        else
+        {
+            _ = _fobosUpdater.CheckAsync();
+        }
 
         CheckForCrashAndPrompt();
         // Keep downloaded builds until the user explicitly clears the cache.
@@ -443,7 +448,20 @@ public sealed class LauncherActivity : Activity
         versionBtn.SetTextColor(LauncherTheme.SubText);
         versionBtn.SetPadding((int)(8 * density), 0, (int)(8 * density), 0);
         versionBtn.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
+        versionBtn.Click += (_, _) => _ = _fobosUpdater.CheckAsync(manual: true);
         bottomBar.AddView(versionBtn);
+
+        var updateBtn = new Button(this)
+        {
+            Text = "Обновить APK",
+            TextSize = 10
+        };
+        updateBtn.Background = LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+        updateBtn.SetTextColor(LauncherTheme.Foreground);
+        updateBtn.SetPadding((int)(8 * density), 0, (int)(8 * density), 0);
+        updateBtn.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
+        updateBtn.Click += (_, _) => _ = _fobosUpdater.CheckAsync(manual: true);
+        bottomBar.AddView(updateBtn);
 
         mainLayout.AddView(bottomBar);
         root.AddView(mainLayout);
@@ -2363,12 +2381,17 @@ public sealed class LauncherActivity : Activity
 
             if (!FobosBuild.Matches(build))
             {
-                throw new InvalidOperationException(
-                    "Эта версия SS14 Фобос рассчитана на движок " + FobosBuild.Engine +
-                    " и сборку " + FobosBuild.ContentRevision[..8] +
-                    ". Сервер использует " + build.EngineVersion + " / " + build.Version +
-                    ". Нужна новая сборка APK под обновление сервера.");
+                if (build.ForkId != FobosBuild.Fork)
+                    throw new InvalidOperationException("Это не сервер SS14 Фобос.");
+
+                Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
+                _overlayBox.Visibility = ViewStates.Gone;
+                await _fobosUpdater.OfferForServerAsync(build.EngineVersion);
+                return;
             }
+            // Version may differ without engine changes; ContentDownloadService
+            // downloads the current client resources directly from the server.
+
 
             var cacheDir = Path.Combine(FilesDir?.AbsolutePath ?? AppContext.BaseDirectory, "content_cache");
             Directory.CreateDirectory(cacheDir);
@@ -2854,6 +2877,7 @@ public sealed class LauncherActivity : Activity
             _storage.Data.DisclaimerAccepted = true;
             _storage.Save();
             dialog?.Dismiss();
+            _ = _fobosUpdater.CheckAsync();
         };
         btnRow.AddView(agreeBtn);
 
