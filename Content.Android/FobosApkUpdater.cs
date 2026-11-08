@@ -18,7 +18,6 @@ namespace Content.Android;
 internal sealed class FobosApkUpdater
 {
     private const string Repository = "RedMin341/space-station-14-mobile";
-    private const string FobosAddress = "ss14://f1.deadspace14.net:1212";
     private const string RunsApi =
         "https://api.github.com/repos/" + Repository +
         "/actions/runs?branch=ss14-fobos-276&per_page=30";
@@ -30,7 +29,6 @@ internal sealed class FobosApkUpdater
     };
 
     private readonly LauncherActivity _activity;
-    private readonly Launcher.Api.HubClient _hub = new();
     private int _busy;
 
     internal string StatusText { get; private set; } = "Проверка обновлений ещё не завершена.";
@@ -66,29 +64,14 @@ internal sealed class FobosApkUpdater
 
     internal void OpenLatest() => Open(DownloadUrl ?? ActionsPage);
 
-    /// <summary>Check the live Fobos engine and offer its current APK on launch.</summary>
+    /// <summary>
+    /// GitHub APK checks must work even when the game server is offline or blocked.
+    /// Server engine compatibility is separately enforced when connecting.
+    /// </summary>
     internal async Task CheckAsync(bool manual = false, bool offerPopup = true)
     {
-        SetState("Проверяем сервер Фобос и готовые APK…");
-        try
-        {
-            var info = await _hub.FetchServerInfoAsync(FobosAddress);
-            if (info?.Build == null || !string.Equals(info.Build.ForkId, FobosBuild.Fork, StringComparison.Ordinal))
-            {
-                SetState("Не удалось связаться с Фобосом. Проверь интернет и обнови вкладку.");
-                if (manual)
-                    ShowToast("Не удалось получить версию сервера Фобос");
-                return;
-            }
-            await OfferAsync(info.Build.EngineVersion, manual, offerPopup);
-        }
-        catch (Exception ex)
-        {
-            global::Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
-            SetState("Не удалось проверить обновления. Повтори позже.");
-            if (manual)
-                ShowToast("Не удалось проверить обновления. Проверь интернет.");
-        }
+        SetState("Проверяем готовые обновления APK на GitHub…");
+        await OfferAsync(null, manual, offerPopup);
     }
 
     /// <summary>Invoked by the connection screen on an incompatible engine.</summary>
@@ -97,54 +80,54 @@ internal sealed class FobosApkUpdater
 
     private async Task OfferAsync(string? targetEngine, bool manual, bool offerPopup = true)
     {
-        if (string.IsNullOrWhiteSpace(targetEngine))
-        {
-            if (manual)
-                ShowToast("Фобос не сообщил версию движка");
-            return;
-        }
-
         if (Interlocked.Exchange(ref _busy, 1) != 0)
             return;
         try
         {
-            TargetEngine = targetEngine;
+            // Prefer the live engine when it is available from a connection,
+            // but do not require the game server for checking Android APK releases.
             var apk = await FindLatestCompatibleAsync(targetEngine);
             var local = GetInstalledVersion();
+            TargetEngine = apk?.Engine ?? targetEngine ?? FobosBuild.Engine;
+
             if (apk != null && apk.Version > local)
             {
                 SetState($"Доступна новая версия Фобоса: {apk.Version} (установлена {local}).",
                     apk.Notes, apk);
                 if (offerPopup)
-                    ShowDownload(apk, targetEngine);
+                    ShowDownload(apk, apk.Engine);
             }
-            else if (targetEngine != FobosBuild.Engine)
+            else if (!string.IsNullOrWhiteSpace(targetEngine) && targetEngine != FobosBuild.Engine)
             {
-                SetState($"Сервер обновился до движка {targetEngine}. Подходящего APK ещё нет.",
+                SetState($"Сервер обновился до движка {targetEngine}. Подходящего APK пока нет.",
                     "GitHub проверяет обновление движка и готовит APK. Старая сборка не подходит.");
+            }
+            else if (apk == null)
+            {
+                SetState("GitHub доступен, но готовых APK Фобоса пока не найдено.",
+                    "Проверь историю сборок или повтори проверку позже.");
             }
             else
             {
                 SetState($"У вас последняя версия: {local}.",
-                    "Сейчас обновлять APK не требуется.\n\n" +
-                    "Изменения 0.1.14:\n" +
-                    "• Вкладка «Изменения» с проверкой актуальности.\n" +
-                    "• При появлении нового APK появится ссылка на конкретный артефакт GitHub.\n" +
-                    "• Игровые ресурсы при том же движке обновляются с сервера без переустановки.",
+                    "Обновлять APK не требуется.\n\n" +
+                    "Изменения:\n" +
+                    "• Вкладка «Изменения» с проверкой версий и ссылками на APK.\n" +
+                    "• Обновления движка собираются на GitHub.\n" +
+                    "• Игровые ресурсы при том же движке загружаются с сервера без переустановки.",
                     null);
             }
         }
         catch (Exception ex)
         {
             global::Android.Util.Log.Warn("FobosApkUpdater", ex.ToString());
-            SetState("Не удалось получить сведения о сборках GitHub. Попробуй ещё раз.");
+            SetState("Не удалось получить сведения об APK с GitHub. Проверь интернет или повтори проверку.");
             if (manual && offerPopup)
                 _activity.RunOnUiThread(() =>
                     new AlertDialog.Builder(_activity)
-                        .SetTitle("Не удалось проверить APK")
-                        .SetMessage("GitHub недоступен или ограничил запросы. " +
-                                    "Открой сборки вручную, если обновление сервера уже вышло.")
-                        .SetPositiveButton("GitHub", (_, _) => Open(ActionsPage))
+                        .SetTitle("Не удалось проверить обновления")
+                        .SetMessage("GitHub недоступен или ограничил запросы. Сборки можно открыть вручную.")
+                        .SetPositiveButton("Сборки GitHub", (_, _) => Open(ActionsPage))
                         .SetNegativeButton("Закрыть", (_, _) => { })
                         .Show());
         }
@@ -154,7 +137,7 @@ internal sealed class FobosApkUpdater
         }
     }
 
-    private async Task<PublishedApk?> FindLatestCompatibleAsync(string engineVersion)
+    private async Task<PublishedApk?> FindLatestCompatibleAsync(string? engineVersion)
     {
         using var json = JsonDocument.Parse(await Http.GetStringAsync(RunsApi));
         if (!json.RootElement.TryGetProperty("workflow_runs", out var runs) ||
@@ -183,7 +166,7 @@ internal sealed class FobosApkUpdater
             var buildSource = await Http.GetStringAsync(sourceUrl);
             var engineMatch = Regex.Match(buildSource,
                 "public const string Engine\\s*=\\s*\"([^\"]+)\"");
-            if (!engineMatch.Success || engineMatch.Groups[1].Value != engineVersion)
+            if (!engineMatch.Success || (engineVersion != null && engineMatch.Groups[1].Value != engineVersion))
                 continue;
 
             var runId = runIdElement.GetInt64();
@@ -222,11 +205,17 @@ internal sealed class FobosApkUpdater
                       "• Уведомление «мяу! Пора ставить новый хром чума!» при выходе APK.\n" +
                       "• Кнопка ведёт на актуальный артефакт сборки GitHub.\n" +
                       "• Ресурсы сервера обновляются внутри приложения, движок через GitHub."
-                    : "• Обновлена сборка клиента для движка RobustToolbox " + engineVersion + ".\n" +
+                    : version == new Version(0, 1, 15)
+                    ? "• Тест обновления: версия приложения изменена с 0.1.14 на 0.1.15.\n" +
+                      "• Движок и игровое управление не изменены."
+                    : version == new Version(0, 1, 16)
+                    ? "• Исправлена проверка обновлений: GitHub проверяется без соединения с Фобосом.\n" +
+                      "• Кнопка на вкладке «Изменения» открывает последнюю готовую APK-сборку."
+                    : "• Обновлена сборка клиента для движка RobustToolbox " + engineMatch.Groups[1].Value + ".\n" +
                       "• Сохранены управление Фобоса и подпись приложения.";
                 if (!string.IsNullOrWhiteSpace(commitMessage))
                     notes += "\n• Из GitHub: " + commitMessage;
-                var candidate = new PublishedApk(version, engineVersion,
+                var candidate = new PublishedApk(version, engineMatch.Groups[1].Value,
                     runId, artifactIdElement.GetInt64(), notes);
                 if (best == null || candidate.Version > best.Version)
                     best = candidate;

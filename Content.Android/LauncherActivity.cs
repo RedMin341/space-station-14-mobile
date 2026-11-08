@@ -802,7 +802,7 @@ public sealed class LauncherActivity : Activity
         AddText("ИЗМЕНЕНИЯ · SS14 ФОБОС 276", 19, true);
         AddText("Установлена: v" + _fobosUpdater.InstalledVersion +
             "    |    Движок в APK: " + FobosBuild.Engine, 13);
-        AddText("Движок сервера: " + _fobosUpdater.TargetEngine, 13);
+        AddText("Движок найденного APK: " + _fobosUpdater.TargetEngine, 13);
         AddText(_fobosUpdater.StatusText, 16, true);
         AddText("Что изменилось", 17, true);
         AddText(_fobosUpdater.ReleaseNotes, 13);
