@@ -495,6 +495,7 @@ namespace Content.Android
 
         protected override void OnCreate(Bundle? savedInstanceState)
         {
+            StartupDiagnostics.Start();
             InstallJavaCrashHandler();
             // The SDL runtime can reset orientation at startup; enforce
             // landscape in code (manifest attribute alone doesn't stick).
@@ -573,7 +574,9 @@ namespace Content.Android
             {
                 LogCrash("OnCreateExtractResources", ex);
             }
+            StartupDiagnostics.Mark("MainActivity.OnCreate: before SDL base");
             base.OnCreate(savedInstanceState);
+            StartupDiagnostics.Mark("MainActivity.OnCreate: after SDL base");
             Instance = this;
             try
             {
@@ -665,6 +668,8 @@ namespace Content.Android
             catch {}
         }
 
+        private string? _lastSurfaceResolution;
+
         // [SolomonNumb1] downscales render surface to 720p/900p/1080p, drastically improving framerates on L GPUs(telling this with my mali g57 mc2,lmao)
         private void ApplyDisplayResolution()
         {
@@ -672,9 +677,15 @@ namespace Content.Android
             {
                 if (MSurface?.Holder == null) return;
                 var res = Intent?.GetStringExtra("display_resolution") ?? "native";
+                // Repeated SurfaceHolder sizing during SDL window/focus setup can
+                // destroy/recreate the GL surface mid-initialization. Apply once.
+                if (res == _lastSurfaceResolution) return;
                 if (res == "native" || string.IsNullOrEmpty(res))
                 {
-                    MSurface.Holder.SetSizeFromLayout();
+                    // SDL has already created the native-size surface. Do not
+                    // trigger an unnecessary second resize/recreation.
+                    _lastSurfaceResolution = res;
+                    StartupDiagnostics.Mark("Surface: native size unchanged");
                     return;
                 }
 
@@ -698,12 +709,14 @@ namespace Content.Android
                 {
                     int targetW = (int)Math.Round(targetH * aspect);
                     global::Android.Util.Log.Info("SS14Launch", $"[Resolution] Setting Surface size to {targetW}x{targetH} (native is {screenW}x{screenH})");
+                    StartupDiagnostics.Mark($"Surface.SetFixedSize: {targetW}x{targetH}");
                     MSurface.Holder.SetFixedSize(targetW, targetH);
                 }
                 else
                 {
-                    MSurface.Holder.SetSizeFromLayout();
+                    StartupDiagnostics.Mark("Surface: requested resolution >= native; left unchanged");
                 }
+                _lastSurfaceResolution = res;
             }
             catch (Exception ex)
             {
@@ -719,13 +732,16 @@ namespace Content.Android
             {
                 // SDL runtime requests FULL_USER or PORTRAIT during window creation;
                 // unconditionally enforce SensorLandscape so orientation never flips.
-                base.RequestedOrientation = global::Android.Content.PM.ScreenOrientation.SensorLandscape;
+                if (base.RequestedOrientation != global::Android.Content.PM.ScreenOrientation.SensorLandscape)
+                    base.RequestedOrientation = global::Android.Content.PM.ScreenOrientation.SensorLandscape;
             }
         }
 
         protected override void OnResume()
         {
+            StartupDiagnostics.Mark("MainActivity.OnResume: before SDL base");
             base.OnResume();
+            StartupDiagnostics.Mark("MainActivity.OnResume: after SDL base");
             try
             {
                 if (RequestedOrientation != global::Android.Content.PM.ScreenOrientation.SensorLandscape)
@@ -740,7 +756,9 @@ namespace Content.Android
 
         public override void OnWindowFocusChanged(bool hasFocus)
         {
+            StartupDiagnostics.Mark($"MainActivity.OnWindowFocusChanged: before SDL base (focus={hasFocus})");
             base.OnWindowFocusChanged(hasFocus);
+            StartupDiagnostics.Mark($"MainActivity.OnWindowFocusChanged: after SDL base (focus={hasFocus})");
             if (hasFocus)
             {
                 try
@@ -748,7 +766,8 @@ namespace Content.Android
                     // SDL sets its own orientation at runtime, stomping the
                     // manifest; re-assert after focus lands (and again shortly
                     // after, to win any late SDL reset).
-                    RequestedOrientation = global::Android.Content.PM.ScreenOrientation.SensorLandscape;
+                    if (RequestedOrientation != global::Android.Content.PM.ScreenOrientation.SensorLandscape)
+                        RequestedOrientation = global::Android.Content.PM.ScreenOrientation.SensorLandscape;
                     var view = Window?.DecorView;
                     view?.PostDelayed(() =>
                     {
@@ -825,6 +844,7 @@ namespace Content.Android
 
         protected override void Main()
         {
+            StartupDiagnostics.Mark("SDLThread: enter Main()");
             try
             {
                 var filesDir = "/data/data/io.spacestation14.android/files";
@@ -840,6 +860,7 @@ namespace Content.Android
                     global::Android.Util.Log.Error("SS14_LOG", $"Failed to redirect console: {ex}");
                 }
 
+                StartupDiagnostics.Mark("SDLThread: initializing Robust assemblies");
                 var robustShared = Assembly.Load("Robust.Shared");
                 if (robustShared == null) throw new Exception("robustShared assembly is null");
                 var robustClient = Assembly.Load("Robust.Client");
@@ -973,10 +994,13 @@ namespace Content.Android
                 var contentStart = !hasZip;
                 global::Android.Util.Log.Info("SS14Launch", $"[Main] Starting GameController: contentStart={contentStart}, hasZip={hasZip}, mountZip={mountZip}, connectAddr={connectAddr}, user={username}");
 
+                StartupDiagnostics.Mark("SDLThread: invoking GameController.Start (game startup)");
                 startMethod.Invoke(null, new object?[] { args.ToArray(), options, contentStart, null });
+                StartupDiagnostics.Mark("SDLThread: GameController.Start returned");
             }
             catch (Exception ex)
             {
+                StartupDiagnostics.Mark("SDLThread: exception in Main: " + ex.GetType().Name);
                 LogCrash("Main", ex);
                 throw;
             }
