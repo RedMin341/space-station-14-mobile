@@ -216,6 +216,7 @@ public static class CrashReporter
         {
             try { if (File.Exists(CrashPath)) File.Delete(CrashPath); } catch { }
             try { if (File.Exists(SeenMarkerPath)) File.Delete(SeenMarkerPath); } catch { }
+            try { if (File.Exists(StartupDiagnostics.Path)) File.Delete(StartupDiagnostics.Path); } catch { }
             // game.log is per-run; leave it alone so the current session's log survives.
         }
     }
@@ -235,6 +236,9 @@ public static class CrashReporter
         sb.AppendLine();
         sb.AppendLine("=== game.log (tail) ===");
         sb.AppendLine(TailText(GameLogPath, MaxLogTailChars));
+        sb.AppendLine();
+        sb.AppendLine("=== startup diagnostics / freeze watchdog ===");
+        sb.AppendLine(TailText(StartupDiagnostics.Path, 8_000));
         sb.AppendLine();
         sb.AppendLine("=== client config (mobile/display/interface/input) ===");
         var cfgSection = GetMobileConfigSection();
@@ -256,9 +260,10 @@ public static class CrashReporter
         {
             var crashSize = File.Exists(CrashPath) ? new FileInfo(CrashPath).Length : 0;
             var logSize = File.Exists(GameLogPath) ? new FileInfo(GameLogPath).Length : 0;
-            if (crashSize == 0 && logSize == 0)
+            var startupSize = File.Exists(StartupDiagnostics.Path) ? new FileInfo(StartupDiagnostics.Path).Length : 0;
+            if (crashSize == 0 && logSize == 0 && startupSize == 0)
                 return "Отчётов об ошибках и журнала игры пока нет.";
-            return $"crash.txt: {FormatBytes(crashSize)}   game.log: {FormatBytes(logSize)}";
+            return $"crash.txt: {FormatBytes(crashSize)}   game.log: {FormatBytes(logSize)}   startup: {FormatBytes(startupSize)}";
         }
         catch { return "Не удалось прочитать сведения о журнале."; }
     }
