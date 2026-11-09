@@ -20,7 +20,7 @@ jobs:
     name: Build SS14 Fobos APK
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -192,6 +192,28 @@ jobs:
           name: SS14-Fobos-${{ steps.ver.outputs.tag }}-APK
           path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 14
+
+      # Publishing from this same successful run is reliable even when the
+      # build was started by GITHUB_TOKEN workflow_dispatch. A separate
+      # workflow_run listener may not start in that case.
+      - name: Publish verified APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: ${{ steps.find_apk.outputs.apk_path }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oP '<ApplicationDisplayVersion>\K[^<]+' Content.Android/Content.Android.csproj)
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          TAG="fobos-v$VERSION"
+          test -s "$APK_PATH"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_PATH" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$APK_PATH" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "SS14 Фобос $VERSION (Android)" \
+              --notes "Подписанный Android-клиент для точной серверной ревизии. Пройдена проверка загрузки прототипов и исходного сертификата; игровой процесс требует проверки на телефоне."
+          fi
+          echo "APK: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
 
 
       - name: Remove temporary signing key
