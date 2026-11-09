@@ -55,11 +55,20 @@ jobs:
           fi
           echo "Permanent signing certificate verified: $ACTUAL"
 
+      - name: Read pinned Fobos content revision
+        id: pinned
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONTENT=$(grep -oP 'public const string ContentRevision = "\K[0-9a-f]{40}' Content.Android/FobosBuild.cs)
+          [[ "$CONTENT" =~ ^[0-9a-f]{40}$ ]]
+          echo "revision=$CONTENT" >> "$GITHUB_OUTPUT"
+
       - name: Checkout pinned Fobos content
         uses: actions/checkout@v4
         with:
           repository: dead-space-server/dead-space-14
-          ref: 28e2afab9ed20a3af35b177eaef318dae1e81fff
+          ref: ${{ steps.pinned.outputs.revision }}
           path: space-station-14
           submodules: recursive
 
