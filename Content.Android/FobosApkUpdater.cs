@@ -7,12 +7,13 @@ using System.Threading.Tasks;
 using Android.App;
 using Android.Content;
 using Android.Widget;
+using Content.Android.Launcher.Models;
 
 namespace Content.Android;
 
 /// <summary>
-/// Fobos server content is downloaded by the normal launcher. For an engine
-/// update, find the newest *successfully built* matching Fobos APK artifact,
+/// Resource archives are downloaded by the normal launcher. For any server C#
+/// content or engine update, find the newest *successfully built* matching APK,
 /// not a stale, hardcoded GitHub Actions URL.
 /// </summary>
 internal sealed class FobosApkUpdater
@@ -39,7 +40,7 @@ internal sealed class FobosApkUpdater
     internal string TargetEngine { get; private set; } = FobosBuild.Engine;
     internal string LatestVersion { get; private set; } = "Неизвестна";
 
-    private sealed record PublishedApk(Version Version, string Engine, long RunId, long ArtifactId, string Notes)
+    private sealed record PublishedApk(Version Version, string Engine, string Content, long RunId, long ArtifactId, string Notes)
     {
         public string Url => $"https://github.com/{Repository}/actions/runs/{RunId}/artifacts/{ArtifactId}";
     }
@@ -71,14 +72,14 @@ internal sealed class FobosApkUpdater
     internal async Task CheckAsync(bool manual = false, bool offerPopup = true)
     {
         SetState("Проверяем готовые обновления APK на GitHub…");
-        await OfferAsync(null, manual, offerPopup);
+        await OfferAsync(null, null, manual, offerPopup);
     }
 
-    /// <summary>Invoked by the connection screen on an incompatible engine.</summary>
-    internal Task OfferForServerAsync(string? serverEngine) =>
-        OfferAsync(serverEngine, manual: true);
+    /// <summary>Invoked by the connection screen on an incompatible C# build.</summary>
+    internal Task OfferForServerAsync(ServerBuildInfo serverBuild) =>
+        OfferAsync(serverBuild.EngineVersion, serverBuild.Version, manual: true);
 
-    private async Task OfferAsync(string? targetEngine, bool manual, bool offerPopup = true)
+    private async Task OfferAsync(string? targetEngine, string? targetContent, bool manual, bool offerPopup = true)
     {
         if (Interlocked.Exchange(ref _busy, 1) != 0)
             return;
@@ -86,9 +87,13 @@ internal sealed class FobosApkUpdater
         {
             // Prefer the live engine when it is available from a connection,
             // but do not require the game server for checking Android APK releases.
-            var apk = await FindLatestCompatibleAsync(targetEngine);
+            var apk = await FindLatestCompatibleAsync(targetEngine, targetContent);
             var local = GetInstalledVersion();
             TargetEngine = apk?.Engine ?? targetEngine ?? FobosBuild.Engine;
+            var installedMatchesServer =
+                (targetEngine == null || targetEngine == FobosBuild.Engine) &&
+                (targetContent == null || string.Equals(targetContent, FobosBuild.ContentRevision,
+                    StringComparison.OrdinalIgnoreCase));
 
             if (apk != null && apk.Version > local)
             {
@@ -97,10 +102,14 @@ internal sealed class FobosApkUpdater
                 if (offerPopup)
                     ShowDownload(apk, apk.Engine);
             }
-            else if (!string.IsNullOrWhiteSpace(targetEngine) && targetEngine != FobosBuild.Engine)
+            else if (!installedMatchesServer)
             {
-                SetState($"Сервер обновился до движка {targetEngine}. Подходящего APK пока нет.",
-                    "GitHub проверяет обновление движка и готовит APK. Старая сборка не подходит.");
+                SetState("Игровой код или движок Фобоса обновился. Совместимого APK пока нет.",
+                    $"Движок: {targetEngine ?? "неизвестен"}. " +
+                    $"Ревизия контента: {targetContent ?? "неизвестна"}. " +
+                    "Старую APK запускать нельзя — дождись новой подписанной сборки.");
+                if (offerPopup)
+                    ShowMissingBuild(targetEngine, targetContent);
             }
             else if (apk == null)
             {
@@ -113,8 +122,8 @@ internal sealed class FobosApkUpdater
                     "Обновлять APK не требуется.\n\n" +
                     "Изменения:\n" +
                     "• Вкладка «Изменения» с проверкой версий и ссылками на APK.\n" +
-                    "• Обновления движка собираются на GitHub.\n" +
-                    "• Игровые ресурсы при том же движке загружаются с сервера без переустановки.",
+                    "• Изменения движка и игрового C#-кода собираются на GitHub.\n" +
+                    "• Только ресурсы той же ревизии загружаются без переустановки.",
                     null);
             }
         }
@@ -137,7 +146,7 @@ internal sealed class FobosApkUpdater
         }
     }
 
-    private async Task<PublishedApk?> FindLatestCompatibleAsync(string? engineVersion)
+    private async Task<PublishedApk?> FindLatestCompatibleAsync(string? engineVersion, string? contentRevision)
     {
         using var json = JsonDocument.Parse(await Http.GetStringAsync(RunsApi));
         if (!json.RootElement.TryGetProperty("workflow_runs", out var runs) ||
@@ -166,7 +175,12 @@ internal sealed class FobosApkUpdater
             var buildSource = await Http.GetStringAsync(sourceUrl);
             var engineMatch = Regex.Match(buildSource,
                 "public const string Engine\\s*=\\s*\"([^\"]+)\"");
-            if (!engineMatch.Success || (engineVersion != null && engineMatch.Groups[1].Value != engineVersion))
+            var contentMatch = Regex.Match(buildSource,
+                "public const string ContentRevision\\s*=\\s*\"([0-9a-fA-F]{40})\"");
+            if (!engineMatch.Success || !contentMatch.Success ||
+                (engineVersion != null && engineMatch.Groups[1].Value != engineVersion) ||
+                (contentRevision != null && !string.Equals(contentMatch.Groups[1].Value,
+                    contentRevision, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
             var runId = runIdElement.GetInt64();
@@ -216,11 +230,11 @@ internal sealed class FobosApkUpdater
                     : version == new Version(0, 1, 16)
                     ? "• Исправлена проверка обновлений: GitHub проверяется без соединения с Фобосом.\n" +
                       "• Кнопка на вкладке «Изменения» открывает последнюю готовую APK-сборку."
-                    : "• Обновлена сборка клиента для движка RobustToolbox " + engineMatch.Groups[1].Value + ".\n" +
+                    : "• Обновлены C#-модули Фобоса (" + contentMatch.Groups[1].Value[..12] + ") и движок " + engineMatch.Groups[1].Value + ".\n" +
                       "• Сохранены управление Фобоса и подпись приложения.";
                 if (!string.IsNullOrWhiteSpace(commitMessage))
                     notes += "\n• Из GitHub: " + commitMessage;
-                var candidate = new PublishedApk(version, engineMatch.Groups[1].Value,
+                var candidate = new PublishedApk(version, engineMatch.Groups[1].Value, contentMatch.Groups[1].Value,
                     runId, artifactIdElement.GetInt64(), notes);
                 if (best == null || candidate.Version > best.Version)
                     best = candidate;
@@ -269,6 +283,23 @@ internal sealed class FobosApkUpdater
                 .SetPositiveButton("Скачать обнову", (_, _) => Open(apk.Url))
                 .SetNeutralButton("Скопировать ссылку", (_, _) => CopyLink(apk.Url))
                 .SetNegativeButton("Позже", (_, _) => { })
+                .Show());
+    }
+
+    private void ShowMissingBuild(string? serverEngine, string? serverContent)
+    {
+        _activity.RunOnUiThread(() =>
+            new AlertDialog.Builder(_activity)
+                .SetTitle("Фобос обновился — требуется новая APK")
+                .SetMessage(
+                    "Код на сервере не совпадает с кодом приложения. " +
+                    "Запуск остановлен, чтобы игра не вылетела при загрузке прототипов.\n\n" +
+                    $"Движок сервера: {serverEngine ?? "неизвестен"}\n" +
+                    $"Контент сервера: {serverContent ?? "неизвестен"}\n\n" +
+                    "Автосборка должна выпустить новую подписанную APK. " +
+                    "Проверь готовые сборки на GitHub через некоторое время.")
+                .SetPositiveButton("Сборки GitHub", (_, _) => Open(ActionsPage))
+                .SetNegativeButton("Закрыть", (_, _) => { })
                 .Show());
     }
 

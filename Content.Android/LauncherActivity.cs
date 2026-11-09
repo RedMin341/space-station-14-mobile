@@ -2467,16 +2467,16 @@ public sealed class LauncherActivity : Activity
 
             if (!FobosBuild.Matches(build))
             {
-                if (build.ForkId != FobosBuild.Fork)
-                    throw new InvalidOperationException("Это не сервер SS14 Фобос.");
-
                 Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
                 _overlayBox.Visibility = ViewStates.Gone;
-                await _fobosUpdater.OfferForServerAsync(build.EngineVersion);
+                var mismatch = FobosBuild.DescribeMismatch(build);
+                global::Android.Util.Log.Warn("SS14Launcher", mismatch);
+                if (build.ForkId != FobosBuild.Fork)
+                    throw new InvalidOperationException(mismatch);
+                await _fobosUpdater.OfferForServerAsync(build);
                 return;
             }
-            // Version may differ without engine changes; ContentDownloadService
-            // downloads the current client resources directly from the server.
+            // Both C# revisions match; resource differences are safe to download.
 
 
             var cacheDir = Path.Combine(FilesDir?.AbsolutePath ?? AppContext.BaseDirectory, "content_cache");
@@ -2582,7 +2582,7 @@ public sealed class LauncherActivity : Activity
 
         if (!FobosBuild.Matches(serverInfo?.Build))
         {
-            Toast.MakeText(this, "Сборка сервера не соответствует этой версии SS14 Фобос.", ToastLength.Long)?.Show();
+            Toast.MakeText(this, FobosBuild.DescribeMismatch(serverInfo?.Build), ToastLength.Long)?.Show();
             return;
         }
 
