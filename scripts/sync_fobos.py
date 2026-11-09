@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Keep the EXISTING SS14 Fobos 276 Android app aligned with live Fobos.
 
-Only Fobos /info is authoritative. Content changes are downloaded by Android.
-Rebuild the APK only when the *engine version or engine commit* changes.
+Only Fobos /info is authoritative. Resource changes are downloaded by Android,
+but Content.Client and Content.Shared C# are compiled into the APK. Therefore
+every new Fobos content revision needs a fresh Android build, even when the
+RobustToolbox engine stays on the same revision.
 Atomic commit updates the existing app branch, then workflow_dispatch starts
 the normal release APK build with its permanent certificate checks.
 """
@@ -113,8 +115,12 @@ def plan(files, live_engine, live_content, source_engine_sha):
     old_prepared_engine = re.search(r'(?m)^ENGINE = "([0-9a-f]{40})"$' , files[pp])
     if not old_prepared_engine:
         raise UnsafeUpdate("Missing pinned RobustToolbox revision")
-    # Only engine changes require a new Android APK. Content is downloaded on-device.
-    if old_engine.group(1) == live_engine and old_prepared_engine.group(1) == source_engine_sha:
+    # The Android APK contains compiled Content.Client and Content.Shared.
+    # A content-only server update can introduce new enum/component types and
+    # must not be treated as just a downloadable resource update.
+    if (old_engine.group(1) == live_engine
+            and old_prepared_engine.group(1) == source_engine_sha
+            and old_content.group(1) == live_content):
         return {}
     build = replace_once(old_build, r'public const string Engine = "[^"]+";', 'public const string Engine = "{}";'.format(live_engine), bp)
     build = replace_once(build, r'public const string ContentRevision = "[0-9a-f]{40}";', 'public const string ContentRevision = "{}";'.format(live_content), bp)
@@ -169,7 +175,7 @@ def main():
         files = {p: get_file(REPO, p, BRANCH) for p in paths}
         changes = plan(files, engine, content, engine_sha)
         if not changes:
-            print("No engine update needed. Content-only changes are downloaded directly by Android.")
+            print("Fobos engine and content are already matched; no new APK needed.")
             return 0
         print("Atomic update:", ", ".join(changes))
         new_sha = commit_once(changes, engine, content)
@@ -177,7 +183,7 @@ def main():
         # GITHUB_TOKEN pushes do not trigger workflows; workflow_dispatch DOES.
         api("/repos/{}/actions/workflows/android-release.yml/dispatches".format(REPO),
             "POST", {"ref": BRANCH, "inputs": {"release_tag": ""}})
-        print("Started signed APK workflow for changed Fobos RobustToolbox engine.")
+        print("Started signed APK workflow for changed Fobos engine/content revision.")
         return 0
     except UnsafeUpdate as exc:
         print("::warning::Skipping Fobos auto-update safely: {}".format(exc))

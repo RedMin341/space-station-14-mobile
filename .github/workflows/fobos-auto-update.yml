@@ -27,7 +27,7 @@ concurrency:
 jobs:
   check-live-fobos:
     if: github.event_name != 'workflow_run'
-    name: Check live Fobos; rebuild only on version change
+    name: Check live Fobos engine and content revision
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -36,6 +36,9 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+
+      - name: Test sync revision detection
+        run: python3 -m unittest scripts.test_sync_fobos -v
 
       - name: Detect current Fobos engine and content
         env:
@@ -49,7 +52,7 @@ jobs:
           echo "### Fobos Android auto-sync" >> "$GITHUB_STEP_SUMMARY"
           echo "Checks the live Fobos /info, not upstream master." >> "$GITHUB_STEP_SUMMARY"
           echo "Only updates ss14-fobos-276, preserves its package ID, original signing verification and Android controls." >> "$GITHUB_STEP_SUMMARY"
-          echo "New server revisions trigger the existing Build SS14 Fobos 276 workflow." >> "$GITHUB_STEP_SUMMARY"
+          echo "Every new server content/engine revision triggers the existing Build SS14 Fobos 276 workflow, since client C# is bundled in the APK." >> "$GITHUB_STEP_SUMMARY"
           echo "If server is unreachable or revision/version is unsupported, no APK is published." >> "$GITHUB_STEP_SUMMARY"
 
   publish-signed-fobos:
