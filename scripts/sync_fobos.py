@@ -105,7 +105,6 @@ def replace_once(text, pattern, replacement, path):
 def plan(files, live_engine, live_content, source_engine_sha):
     bp = "Content.Android/FobosBuild.cs"
     pp = "scripts/prepare-fobos.py"
-    wp = ".github/workflows/android-release.yml"
     cp = "Content.Android/Content.Android.csproj"
     old_build = files[bp]
     old_engine = re.search(r'public const string Engine = "([^"]+)";', old_build)
@@ -130,8 +129,6 @@ def plan(files, live_engine, live_content, source_engine_sha):
     prep = replace_once(prep, r'(?m)^ENGINE = "[0-9a-f]{40}"$', 'ENGINE = "{}"'.format(source_engine_sha), pp)
     prep = replace_once(prep, r'(?m)^print\(f"Fobos content \{CONTENT\}; engine [^\n]*\)$', 'print(f"Fobos content {{CONTENT}}; engine {} ({{ENGINE}})")'.format(live_engine), pp)
 
-    wf = replace_once(files[wp], r'(?m)^[ \t]+ref: [0-9a-f]{40}(?=\n|\Z)', '          ref: ' + live_content, wp)
-
     project = files[cp]
     code = re.search(r"<ApplicationVersion>(\d+)</ApplicationVersion>", project)
     version = re.search(r"<ApplicationDisplayVersion>(\d+)\.(\d+)\.(\d+)</ApplicationDisplayVersion>", project)
@@ -144,7 +141,10 @@ def plan(files, live_engine, live_content, source_engine_sha):
     project = replace_once(project, r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>{}</ApplicationVersion>".format(next_code), cp)
     project = replace_once(project, r"<ApplicationDisplayVersion>\d+\.\d+\.\d+</ApplicationDisplayVersion>",
                            "<ApplicationDisplayVersion>{}.{}.{}</ApplicationDisplayVersion>".format(a, b, c + 1), cp)
-    updated = {bp: build, pp: prep, wp: wf, cp: project}
+    # Workflow resolves the pin from FobosBuild.cs. Never update files under
+    # .github/workflows from GITHUB_TOKEN: that requires elevated workflow
+    # permissions and causes a 403 on some repository configurations.
+    updated = {bp: build, pp: prep, cp: project}
     return {path: value for path, value in updated.items() if files[path] != value}
 
 
@@ -171,7 +171,7 @@ def main():
         if engine != source_version:
             raise UnsafeUpdate("Live server engine {} != source engine {}".format(engine, source_version))
         paths = ["Content.Android/FobosBuild.cs", "scripts/prepare-fobos.py",
-                 ".github/workflows/android-release.yml", "Content.Android/Content.Android.csproj"]
+                 "Content.Android/Content.Android.csproj"]
         files = {p: get_file(REPO, p, BRANCH) for p in paths}
         changes = plan(files, engine, content, engine_sha)
         if not changes:
