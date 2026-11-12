@@ -1968,26 +1968,103 @@ public sealed class LauncherActivity : Activity
         };
         view.AddView(lowMemoryToggle);
 
-        var disableLightToggle = new CheckBox(this)
+        // Independent, persisted graphics settings. No auto-reset when re-entering.
+        var shadowLabel = new TextView(this) { Text = "Динамические тени:", TextSize = 13 };
+        shadowLabel.SetTextColor(LauncherTheme.Foreground);
+        view.AddView(shadowLabel);
+        var shadowRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        var shadowButtons = new List<Button>();
+        var currentShadows = AndroidPerformance.ShadowQuality(this);
+        foreach (var (label, value) in new (string label, string value)[]
         {
-            Text = "Отключить динамические тени (свет останется)",
-            TextSize = 13,
-            Checked = AndroidPerformance.DisableDynamicLighting(this)
-        };
-        disableLightToggle.SetTextColor(LauncherTheme.Foreground);
-        disableLightToggle.CheckedChange += (_, args) =>
+            ("Выкл.", "off"), ("Низкие", "low"),
+            ("Средние", "medium"), ("Высокие", "high")
+        })
         {
-            prefs?.Edit()?.PutBoolean(AndroidPerformance.DisableLightingKey, args.IsChecked)?.Apply();
-        };
-        view.AddView(disableLightToggle);
+            var btn = new Button(this) { Text = label, TextSize = 10 };
+            btn.LayoutParameters = new LinearLayout.LayoutParams(0, (int)(38 * density), 1f);
+            btn.Background = currentShadows == value
+                ? LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3)
+                : LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+            btn.SetTextColor(LauncherTheme.Foreground);
+            btn.Click += (_, _) =>
+            {
+                prefs?.Edit()?.PutString(AndroidPerformance.ShadowQualityKey, value)?.Apply();
+                foreach (var item in shadowButtons)
+                    item.Background = item == btn
+                        ? LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3)
+                        : LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+            };
+            shadowButtons.Add(btn);
+            shadowRow.AddView(btn);
+        }
+        view.AddView(shadowRow);
+
+        var lightLabel = new TextView(this) { Text = "Качество освещения:", TextSize = 13 };
+        lightLabel.SetTextColor(LauncherTheme.Foreground);
+        view.AddView(lightLabel);
+        var lightRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        var lightButtons = new List<Button>();
+        var currentLightQuality = AndroidPerformance.LightingQuality(this);
+        foreach (var (label, value) in new (string label, string value)[]
+        {
+            ("Низкое", "low"), ("Среднее", "medium"), ("Высокое", "high")
+        })
+        {
+            var btn = new Button(this) { Text = label, TextSize = 11 };
+            btn.LayoutParameters = new LinearLayout.LayoutParams(0, (int)(38 * density), 1f);
+            btn.Background = currentLightQuality == value
+                ? LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3)
+                : LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+            btn.SetTextColor(LauncherTheme.Foreground);
+            btn.Click += (_, _) =>
+            {
+                prefs?.Edit()?.PutString(AndroidPerformance.LightingQualityKey, value)?.Apply();
+                foreach (var item in lightButtons)
+                    item.Background = item == btn
+                        ? LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3)
+                        : LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+            };
+            lightButtons.Add(btn);
+            lightRow.AddView(btn);
+        }
+        view.AddView(lightRow);
+
+        var fpsLabel = new TextView(this) { Text = "Ограничение FPS:", TextSize = 13 };
+        fpsLabel.SetTextColor(LauncherTheme.Foreground);
+        view.AddView(fpsLabel);
+        var fpsRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+        var fpsButtons = new List<Button>();
+        var currentFps = AndroidPerformance.FpsLimit(this);
+        foreach (var fps in new[] { 30, 45, 60, 90 })
+        {
+            var btn = new Button(this) { Text = fps.ToString(), TextSize = 11 };
+            btn.LayoutParameters = new LinearLayout.LayoutParams(0, (int)(38 * density), 1f);
+            btn.Background = currentFps == fps
+                ? LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3)
+                : LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+            btn.SetTextColor(LauncherTheme.Foreground);
+            btn.Click += (_, _) =>
+            {
+                prefs?.Edit()?.PutInt(AndroidPerformance.FpsLimitKey, fps)?.Apply();
+                foreach (var item in fpsButtons)
+                    item.Background = item == btn
+                        ? LauncherTheme.CreateBox(LauncherTheme.ControlHigh, 3)
+                        : LauncherTheme.CreateBox(LauncherTheme.ControlMid, 3);
+            };
+            fpsButtons.Add(btn);
+            fpsRow.AddView(btn);
+        }
+        view.AddView(fpsRow);
 
         var performanceHint = new TextView(this)
         {
             Text = "Изменения применяются при следующем запуске игры. " +
-                   "На устройствах с 6 ГБ ОЗУ или меньше оба режима включены по умолчанию. " +
-                   "Экономия снижает качество и отложенно загружает текстуры. " +
-                   "Лампы и фонари всегда работают, независимо от настройки теней. " +
-                   "ОЗУ используется по необходимости, без ограничения в 1 ГБ.",
+                   "Тени Выкл.: свет от фонарей и персонажа остаётся, " +
+                   "но не отбрасывает динамические тени от стен и предметов. " +
+                   "Качество освещения регулирует его детализацию и число источников. " +
+                   "Экономия памяти управляет загрузкой текстур и фоновой нагрузкой. " +
+                   "Лимита ОЗУ в 1 ГБ нет.",
             TextSize = 11
         };
         performanceHint.SetTextColor(LauncherTheme.SubText);

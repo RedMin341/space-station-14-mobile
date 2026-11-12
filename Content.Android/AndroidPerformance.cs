@@ -14,6 +14,9 @@ internal static class AndroidPerformance
     // Reuse the old preference key so existing user selections are preserved.
     // It now controls shadows only: dynamic lights are always rendered.
     internal const string DisableLightingKey = "disable_dynamic_lighting";
+    internal const string ShadowQualityKey = "shadow_quality";
+    internal const string LightingQualityKey = "lighting_quality";
+    internal const string FpsLimitKey = "fps_limit";
     private const string PreferencesName = "ss14_mobile_config";
     private const long MiB = 1024L * 1024L;
     private const long AutoLowMemoryLimit = 6L * 1024L * MiB;
@@ -28,14 +31,49 @@ internal static class AndroidPerformance
         catch { return IsLowRamDevice(context); }
     }
 
-    internal static bool DisableDynamicLighting(Context context)
+    // Four independent shadow presets. "off" skips shadow rendering
+    // but does NOT remove the lights themselves or the visibility/FOV system.
+    internal static string ShadowQuality(Context context)
     {
         try
         {
             var prefs = context.GetSharedPreferences(PreferencesName, FileCreationMode.Private);
-            return prefs?.GetBoolean(DisableLightingKey, IsLowRamDevice(context)) ?? IsLowRamDevice(context);
+            var value = prefs?.GetString(ShadowQualityKey, null);
+            if (value is "off" or "low" or "medium" or "high")
+                return value;
+
+            // Migration from the old "disable dynamic shadows" checkbox.
+            if (prefs?.Contains(DisableLightingKey) == true)
+                return prefs.GetBoolean(DisableLightingKey, false) ? "off" : "medium";
         }
-        catch { return IsLowRamDevice(context); }
+        catch { }
+        return IsLowRamDevice(context) ? "low" : "medium";
+    }
+
+    internal static string LightingQuality(Context context)
+    {
+        try
+        {
+            var value = context.GetSharedPreferences(PreferencesName, FileCreationMode.Private)?
+                .GetString(LightingQualityKey, null);
+            if (value is "low" or "medium" or "high")
+                return value;
+        }
+        catch { }
+        return IsLowRamDevice(context) ? "low" : "medium";
+    }
+
+    internal static int FpsLimit(Context context)
+    {
+        try
+        {
+            var prefs = context.GetSharedPreferences(PreferencesName, FileCreationMode.Private);
+            var fps = prefs?.GetInt(FpsLimitKey, IsLowRamDevice(context) ? 30 : 60) ?? 60;
+            if (fps is 30 or 45 or 60 or 90)
+                return fps;
+        }
+        catch { }
+        return IsLowRamDevice(context) ? 30 : 60;
     }
 
     private static bool IsLowRamDevice(Context context)

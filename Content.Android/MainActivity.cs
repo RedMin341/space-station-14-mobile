@@ -928,28 +928,54 @@ namespace Content.Android
                 var hasZip = !string.IsNullOrEmpty(mountZip) && File.Exists(mountZip);
 
                 var lowMemoryMode = AndroidPerformance.LowMemoryMode(this);
-                var disableDynamicShadows = AndroidPerformance.DisableDynamicLighting(this);
+                var shadowQuality = AndroidPerformance.ShadowQuality(this);
+                var lightingQuality = AndroidPerformance.LightingQuality(this);
+                var fpsLimit = AndroidPerformance.FpsLimit(this);
+                var shadowCount = shadowQuality switch
+                {
+                    "high" => 64,
+                    "medium" => 24,
+                    "low" => 8,
+                    _ => 8 // Keep the engine shadow buffer valid in shadowless mode.
+                };
+                var lightingScale = lightingQuality switch
+                {
+                    "high" => "0.5",
+                    "medium" => "0.35",
+                    _ => "0.25"
+                };
+                var lightCount = lightingQuality switch
+                {
+                    "high" => 1024,
+                    "medium" => 512,
+                    _ => 256
+                };
                 System.Environment.SetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_SHADOWS",
-                    disableDynamicShadows ? "1" : "0");
+                    shadowQuality == "off" ? "1" : "0");
                 StartupDiagnostics.Mark("GAME: selected performance settings: " +
-                    $"low_memory={lowMemoryMode}; dynamic_lighting=True; " +
-                    $"shadows_enabled={!disableDynamicShadows}; " +
+                    $"low_memory={lowMemoryMode}; shadows={shadowQuality}; " +
+                    $"lighting={lightingQuality}; fps={fpsLimit}; " +
                     AndroidPerformance.DescribeMemory());
 
+                // Each graphics option is independent of the others. The low-memory
+                // switch only alters preload/audio/worker settings, not lighting or FPS.
+                // Android manages the available heap: no artificial 1 GiB cap.
                 var args = new List<string>
                 {
-                    "--cvar", "thread.parallel_count=2",
-                    "--cvar", "light.blur=false",
-                    "--cvar", "light.soft_shadows=false",
+                    "--cvar", $"thread.parallel_count={(lowMemoryMode ? 2 : 4)}",
+                    "--cvar", $"light.blur={(lightingQuality == "high" ? "true" : "false")}",
+                    "--cvar", $"light.soft_shadows={(shadowQuality == "high" ? "true" : "false")}",
                     "--cvar", "light.ambient_occlusion=false",
-                    "--cvar", "light.resolution_scale=0.25",
-                    "--cvar", "light.max_shadowcasting_lights=8",
+                    "--cvar", $"light.resolution_scale={lightingScale}",
+                    "--cvar", $"light.max_light_count={lightCount}",
+                    "--cvar", $"light.max_shadowcasting_lights={shadowCount}",
                     "--cvar", "parallax.enabled=false",
                     "--cvar", "viewport.scale_render=false",
                     "--cvar", "display.vsync=false",
-                    "--cvar", "display.max_fps=60",
-                    "--cvar", "audio.max_ambient_sources=16",
-                    "--cvar", "audio.max_channels=24",
+                    "--cvar", $"display.max_fps={fpsLimit}",
+                    "--cvar", $"audio.max_ambient_sources={(lowMemoryMode ? 8 : 16)}",
+                    "--cvar", $"audio.max_channels={(lowMemoryMode ? 12 : 24)}",
+                    "--cvar", "res.texturepreloadingenabled=" + (lowMemoryMode ? "false" : "true"),
                     "--cvar", "net.logging=false",
                     "--cvar", "mobile.touch_controls=true",
                     "--cvar", "hud.fps_counter_visible=true",
@@ -961,19 +987,6 @@ namespace Content.Android
                     "--cvar", "log.level=Info",
 #endif
                 };
-
-                if (lowMemoryMode)
-                {
-                    // On-demand textures reduce startup memory. No 1 GiB RAM limit is applied.
-                    args.AddRange(new[]
-                    {
-                        "--cvar", "res.texturepreloadingenabled=false",
-                        "--cvar", "light.max_light_count=64",
-                        "--cvar", "light.max_shadowcasting_lights=2",
-                        "--cvar", "display.max_fps=30",
-                        "--cvar", "audio.max_channels=12",
-                    });
-                }
 
                 if (!string.IsNullOrEmpty(connectAddr))
                 {

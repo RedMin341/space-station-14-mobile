@@ -1,0 +1,27 @@
+diff --git a/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs b/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs
+--- a/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs
++++ b/Robust.Client/Graphics/Clyde/Clyde.LightRendering.cs
+@@ -519,8 +519,11 @@
+                     }
+ 
+                     lightShader.SetUniformMaybe("lightCenter", lightPos);
++                    // Shadowless mode keeps the light visible while disabling its
++                    // occlusion/shadow lookup (including player-held lights).
+                     lightShader.SetUniformMaybe("lightIndex",
++                        _lightManager.DrawShadows && component.CastShadows
++                            ? (i + 0.5f) / ShadowTexture.Height : -1);
+-                        component.CastShadows ? (i + 0.5f) / ShadowTexture.Height : -1);
+ 
+                     var offset = new Vector2(component.Radius, component.Radius);
+ 
+@@ -640,7 +643,9 @@
+                 comp.Tree.QueryAabb(ref state, LightQuery, bounds);
+             }
+ 
++            // Without shadows, shadow-casting lights are still ordinary lights.
++            // Do not discard their light entirely due to the shadow budget.
++            if (_lightManager.DrawShadows && state.shadowCastingCount > _maxShadowcastingLights)
+-            if (state.shadowCastingCount > _maxShadowcastingLights)
+             {
+                 // There are too many lights casting shadows to fit in the scene.
+                 // This check must occur before occluder expansion, or else bad things happen.
