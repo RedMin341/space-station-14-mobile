@@ -1,7 +1,7 @@
 diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/GameController/GameController.cs
 --- a/Robust.Client/GameController/GameController.cs
 +++ b/Robust.Client/GameController/GameController.cs
-@@ -147,6 +147,17 @@
+@@ -147,6 +147,19 @@
          internal bool StartupContinue(DisplayMode displayMode)
          {
              DebugTools.AssertNotNull(_resourceManifest);
@@ -21,7 +21,7 @@ diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/Game
  
              _loadscr.Initialize(42);
  
-@@ -182,7 +191,12 @@
+@@ -182,7 +195,12 @@
  
              _loadscr.EndLoadingSection();
  
@@ -35,7 +35,7 @@ diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/Game
              _loadscr.LoadingStep(_loc.Initialize, _loc);
  
              // Call Init in game assemblies.
-@@ -195,7 +209,12 @@
+@@ -195,7 +213,12 @@
                  },
                  "WebView init");
  
@@ -49,7 +49,7 @@ diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/Game
  
              // Start bad file extensions check after content init,
              // in case content screws with the VFS.
-@@ -204,7 +223,12 @@
+@@ -204,7 +227,12 @@
                  _configurationManager,
                  _logManager.GetSawmill("res"));
  
@@ -63,7 +63,7 @@ diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/Game
              _loadscr.LoadingStep(() =>
                  {
                      _networkManager.Initialize(false);
-@@ -230,8 +254,10 @@
+@@ -230,8 +258,10 @@
              _loadscr.LoadingStep(_xamlProxyManager.Initialize, _xamlProxyManager);
              _loadscr.LoadingStep(_xamlHotReloadManager.Initialize, _xamlHotReloadManager);
              _loadscr.BeginLoadingSection(_prototypeManager);
