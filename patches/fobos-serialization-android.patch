@@ -1,0 +1,181 @@
+diff --git a/Robust.Shared/Serialization/Manager/SerializationManager.cs b/Robust.Shared/Serialization/Manager/SerializationManager.cs
+--- a/Robust.Shared/Serialization/Manager/SerializationManager.cs
++++ b/Robust.Shared/Serialization/Manager/SerializationManager.cs
+@@ -46,6 +46,29 @@
+ 
+             _initializing = true;
+ 
++            // Android has a much smaller effective GC budget than its physical RAM.
++            // Limit expensive concurrent reflection work, but do not cap heap size.
++            var androidStartup = OperatingSystem.IsAndroid();
++            var reflectionOptions = new ParallelOptions
++            {
++                MaxDegreeOfParallelism = androidStartup ? 2 : -1
++            };
++
++            void TraceAndroidStartup(string stage)
++            {
++                if (!androidStartup)
++                    return;
++
++                try
++                {
++                    System.IO.File.AppendAllText(
++                        "/data/data/io.spacestation14.android/files/debug_init.txt",
++                        $"serialization: {stage} [{DateTime.UtcNow:HH:mm:ss}Z]\\n");
++                }
++                catch { }
++            }
++
++            TraceAndroidStartup("collect attributed types: begin");
+             var flagsTypes = new ConcurrentBag<Type>();
+             var constantsTypes = new ConcurrentBag<Type>();
+             var typeSerializers = new ConcurrentBag<Type>();
+@@ -54,10 +77,14 @@
+             var implicitDataDef = new ConcurrentBag<Type>();
+             var implicitDataRecord = new ConcurrentBag<Type>();
+ 
++            CollectAttributedTypes(flagsTypes, constantsTypes, typeSerializers, meansDataDef,
++                meansDataRecord, implicitDataDef, implicitDataRecord, reflectionOptions);
++            TraceAndroidStartup($"collect attributed types: complete, serializers={typeSerializers.Count}");
+-            CollectAttributedTypes(flagsTypes, constantsTypes, typeSerializers, meansDataDef, meansDataRecord, implicitDataDef, implicitDataRecord);
+ 
++            TraceAndroidStartup("serializer registrations: begin");
+             InitializeFlagsAndConstants(flagsTypes, constantsTypes);
+             InitializeTypeSerializers(typeSerializers);
++            TraceAndroidStartup("serializer registrations: complete");
+ 
+             // This is a bag, not a hash set.
+             // Duplicates are fine since the CWT<,> won't re-run the constructor if it's already in there.
+@@ -99,7 +126,9 @@
+                 }
+             }
+ 
++            TraceAndroidStartup("scan data definition attributes: begin");
++            var scannedTypes = 0;
++            Parallel.ForEach(_reflectionManager.FindAllTypes(), reflectionOptions, type =>
+-            Parallel.ForEach(_reflectionManager.FindAllTypes(), type =>
+             {
+                 if (meansDataDef.Any(type.IsDefined))
+                     registrations.Add(type);
+@@ -106,31 +135,73 @@
+ 
+                 if (type.IsDefined(typeof(DataRecordAttribute)) || meansDataRecord.Any(type.IsDefined))
+                     records[type] = 0;
++
++                if (androidStartup && System.Threading.Interlocked.Increment(ref scannedTypes) % 4096 == 0)
++                    TraceAndroidStartup($"scan progress: {scannedTypes}");
+             });
++            TraceAndroidStartup($"scan: complete, types={scannedTypes}, registrations={registrations.Count}");
+ 
+             var sawmill = Logger.GetSawmill(LogCategory);
++            var registrationTotal = registrations.Count;
++            var completedRegistrations = 0;
++            var activeRegistrations = new ConcurrentDictionary<Type, long>();
++            TraceAndroidStartup($"create data definitions: begin, total={registrationTotal}");
++            // Report whichever types are taking a long time. A silent Android
++            // spinner gives no hint whether reflection is slow or deadlocked.
++            using (var registrationHeartbeat = androidStartup
++                ? new System.Threading.Timer(_ =>
++                {
++                    try
++                    {
++                        var active = activeRegistrations
++                            .Select(pair => (type: pair.Key, elapsed: System.Diagnostics.Stopwatch.GetElapsedTime(pair.Value).TotalSeconds))
++                            .OrderByDescending(pair => pair.elapsed)
++                            .Take(5)
++                            .Select(pair => $"{pair.type.FullName} ({pair.elapsed:F1}s)");
++                        TraceAndroidStartup($"create definitions progress: " +
++                            $"{System.Threading.Volatile.Read(ref completedRegistrations)}/{registrationTotal}; " +
++                            $"active={string.Join("; ", active)}");
++                    }
++                    catch { }
++                }, null, TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(8))
++                : null)
+-
+-            Parallel.ForEach(registrations, type =>
+             {
++                Parallel.ForEach(registrations, reflectionOptions, type =>
+-                if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
+                 {
++                    if (androidStartup)
++                        activeRegistrations[type] = System.Diagnostics.Stopwatch.GetTimestamp();
++
++                    try
++                    {
++                        if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
++                        {
++                            sawmill.Debug(
++                                $"Skipping registering data definition for type {type} since it is abstract or an interface");
++                            return;
++                        }
++
++                        var isRecord = records.ContainsKey(type);
++                        if (!type.IsValueType && !isRecord && !type.HasParameterlessConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
++                        {
++                            sawmill.Warning(
++                                $"Skipping registering data definition for type {type} since it has no parameterless ctor");
++                            return;
++                        }
+-                    sawmill.Debug(
+-                        $"Skipping registering data definition for type {type} since it is abstract or an interface");
+-                    return;
+-                }
+ 
++                        _dataDefinitions.GetOrAdd(type, static (t, s) => s.Item1.CreateDataDefinition(t, s.isRecord), (this, isRecord));
++                    }
++                    finally
++                    {
++                        if (androidStartup)
++                            activeRegistrations.TryRemove(type, out _);
++                        System.Threading.Interlocked.Increment(ref completedRegistrations);
++                    }
++                });
++            }
+-                var isRecord = records.ContainsKey(type);
+-                if (!type.IsValueType && !isRecord && !type.HasParameterlessConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+-                {
+-                    // If someone attempts to save or load an entity that uses this DataDefinition, this will lead to errors.
+-                    sawmill.Warning(
+-                        $"Skipping registering data definition for type {type} since it has no parameterless ctor");
+-                    return;
+-                }
+ 
++            TraceAndroidStartup($"create data definitions: complete, count={_dataDefinitions.Count}");
+-                _dataDefinitions.GetOrAdd(type, static (t, s) => s.Item1.CreateDataDefinition(t, s.isRecord), (this, isRecord));
+-            });
+ 
++            TraceAndroidStartup("validate data definition inheritance: begin");
+             var duplicateErrors = new StringBuilder();
+             var invalidIncludes = new StringBuilder();
+ 
+@@ -184,6 +255,7 @@
+             // TODO SERIALIZATION REFACTOR Somehow validate that data-fields are serializable.
+             // So for now, This will just do a very basic blacklist check.
+ 
++            TraceAndroidStartup("validate field serializability: begin");
+             var forbidden = _reflectionManager.FindTypesWithAttribute<NotYamlSerializableAttribute>()
+                 .ToFrozenSet();
+ 
+@@ -206,6 +278,7 @@
+ 
+             _initialized = true;
+             _initializing = false;
++            TraceAndroidStartup("fully initialized");
+         }
+ 
+         /// <summary>
+@@ -244,10 +317,11 @@
+             ConcurrentBag<Type> meansDataDef,
+             ConcurrentBag<Type> meansDataRecord,
+             ConcurrentBag<Type> implicitDataDef,
++            ConcurrentBag<Type> implicitDataRecord,
++            ParallelOptions reflectionOptions)
+-            ConcurrentBag<Type> implicitDataRecord)
+         {
+             // IsDefined is extremely slow. Great.
++            Parallel.ForEach(_reflectionManager.FindAllTypes(), reflectionOptions, type =>
+-            Parallel.ForEach(_reflectionManager.FindAllTypes(), type =>
+             {
+                 if (type.IsDefined(typeof(FlagsForAttribute), false))
+                     flagsTypes.Add(type);
