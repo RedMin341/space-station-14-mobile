@@ -22,7 +22,7 @@ diff --git a/Robust.Shared/Serialization/Manager/SerializationManager.cs b/Robus
 +                {
 +                    System.IO.File.AppendAllText(
 +                        "/data/data/io.spacestation14.android/files/debug_init.txt",
-+                        $"serialization: {stage} [{DateTime.UtcNow:HH:mm:ss}Z]\\n");
++                        $"serialization: {stage} [{DateTime.UtcNow:HH:mm:ss}Z]\n");
 +                }
 +                catch { }
 +            }
