@@ -1943,6 +1943,55 @@ public sealed class LauncherActivity : Activity
         }
         view.AddView(resBtnsLayout);
 
+        var performanceLabel = new TextView(this)
+        {
+            Text = "Производительность и совместимость:",
+            TextSize = 13,
+            Typeface = global::Android.Graphics.Typeface.DefaultBold
+        };
+        performanceLabel.SetTextColor(LauncherTheme.Foreground);
+        var performanceLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
+        performanceLp.SetMargins(0, (int)(12 * density), 0, (int)(4 * density));
+        performanceLabel.LayoutParameters = performanceLp;
+        view.AddView(performanceLabel);
+
+        var lowMemoryToggle = new CheckBox(this)
+        {
+            Text = "Экономия памяти при загрузке",
+            TextSize = 13,
+            Checked = AndroidPerformance.LowMemoryMode(this)
+        };
+        lowMemoryToggle.SetTextColor(LauncherTheme.Foreground);
+        lowMemoryToggle.CheckedChange += (_, args) =>
+        {
+            prefs?.Edit()?.PutBoolean(AndroidPerformance.LowMemoryKey, args.IsChecked)?.Apply();
+        };
+        view.AddView(lowMemoryToggle);
+
+        var disableLightToggle = new CheckBox(this)
+        {
+            Text = "Отключить динамическое освещение",
+            TextSize = 13,
+            Checked = AndroidPerformance.DisableDynamicLighting(this)
+        };
+        disableLightToggle.SetTextColor(LauncherTheme.Foreground);
+        disableLightToggle.CheckedChange += (_, args) =>
+        {
+            prefs?.Edit()?.PutBoolean(AndroidPerformance.DisableLightingKey, args.IsChecked)?.Apply();
+        };
+        view.AddView(disableLightToggle);
+
+        var performanceHint = new TextView(this)
+        {
+            Text = "Изменения применяются при следующем запуске игры. " +
+                   "На устройствах с 3 ГБ ОЗУ или меньше оба режима включены по умолчанию. " +
+                   "Экономия снижает качество и отложенно загружает текстуры. " +
+                   "ОЗУ используется по необходимости, без ограничения в 1 ГБ.",
+            TextSize = 11
+        };
+        performanceHint.SetTextColor(LauncherTheme.SubText);
+        view.AddView(performanceHint);
+
         var listHeader = new TextView(this)
         {
             Text = "Настройка кнопок:",

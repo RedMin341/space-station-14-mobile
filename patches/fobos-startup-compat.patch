@@ -1,0 +1,72 @@
+diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/GameController/GameController.cs
+--- a/Robust.Client/GameController/GameController.cs
++++ b/Robust.Client/GameController/GameController.cs
+@@ -147,6 +147,15 @@
+         internal bool StartupContinue(DisplayMode displayMode)
+         {
+             DebugTools.AssertNotNull(_resourceManifest);
++            LogDebugInit("startup: enter GameController.StartupContinue");
++            if (OperatingSystem.IsAndroid() &&
++                Environment.GetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_LIGHTS") == "1")
++            {
++                var mobileLights = IoCManager.Resolve<ILightManager>();
++                mobileLights.DrawLighting = false;
++                mobileLights.DrawShadows = false;
++                LogDebugInit("mobile: dynamic lighting and shadows disabled (FOV retained)");
++            }
+ 
+             _loadscr.Initialize(42);
+ 
+@@ -182,7 +191,12 @@
+ 
+             _loadscr.EndLoadingSection();
+ 
++            _loadscr.LoadingStep(() =>
++            {
++                LogDebugInit("serialization: begin");
++                _serializationManager.Initialize();
++                LogDebugInit("serialization: complete");
++            }, _serializationManager);
+-            _loadscr.LoadingStep(_serializationManager.Initialize, _serializationManager);
+             _loadscr.LoadingStep(_loc.Initialize, _loc);
+ 
+             // Call Init in game assemblies.
+@@ -195,7 +209,12 @@
+                 },
+                 "WebView init");
+ 
++            _loadscr.LoadingStep(() =>
++            {
++                LogDebugInit("content initialization: begin");
++                _modLoader.BroadcastRunLevel(ModRunLevel.Init);
++                LogDebugInit("content initialization: complete");
++            }, "Content Init");
+-            _loadscr.LoadingStep(() => _modLoader.BroadcastRunLevel(ModRunLevel.Init), "Content Init");
+ 
+             // Start bad file extensions check after content init,
+             // in case content screws with the VFS.
+@@ -204,7 +223,12 @@
+                 _configurationManager,
+                 _logManager.GetSawmill("res"));
+ 
++            _loadscr.LoadingStep(() =>
++            {
++                LogDebugInit("texture preload: begin");
++                _resourceCache.PreloadTextures();
++                LogDebugInit("texture preload: complete");
++            }, "Texture preload");
+-            _loadscr.LoadingStep(_resourceCache.PreloadTextures, "Texture preload");
+             _loadscr.LoadingStep(() =>
+                 {
+                     _networkManager.Initialize(false);
+@@ -230,8 +254,10 @@
+             _loadscr.LoadingStep(_xamlProxyManager.Initialize, _xamlProxyManager);
+             _loadscr.LoadingStep(_xamlHotReloadManager.Initialize, _xamlHotReloadManager);
+             _loadscr.BeginLoadingSection(_prototypeManager);
++            LogDebugInit("prototypes: begin");
+             _prototypeManager.Initialize();
+             _prototypeManager.LoadDefaultPrototypes();
++            LogDebugInit("prototypes: complete");
+             _loadscr.EndLoadingSection();
+             _loadscr.LoadingStep(_userInterfaceManager.Initialize, "UI init");
+             _loadscr.LoadingStep(_eyeManager.Initialize, _eyeManager);

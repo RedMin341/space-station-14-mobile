@@ -63,6 +63,7 @@ public static class CrashReporter
                 var ctx = global::Android.App.Application.Context;
                 var pkg = ctx.PackageManager?.GetPackageInfo(ctx.PackageName ?? "", 0);
                 sb.AppendLine($"App: {pkg?.VersionName ?? "?"} ({pkg?.VersionCode})");
+                sb.AppendLine("Memory: " + AndroidPerformance.DescribeMemory());
             }
             catch { sb.AppendLine("App: unknown"); }
             return sb.ToString();
@@ -217,6 +218,12 @@ public static class CrashReporter
             try { if (File.Exists(CrashPath)) File.Delete(CrashPath); } catch { }
             try { if (File.Exists(SeenMarkerPath)) File.Delete(SeenMarkerPath); } catch { }
             try { if (File.Exists(StartupDiagnostics.Path)) File.Delete(StartupDiagnostics.Path); } catch { }
+            try
+            {
+                var path = Path.Combine(FilesDir, "debug_init.txt");
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch { }
             // game.log is per-run; leave it alone so the current session's log survives.
         }
     }
@@ -239,6 +246,9 @@ public static class CrashReporter
         sb.AppendLine();
         sb.AppendLine("=== startup diagnostics / freeze watchdog ===");
         sb.AppendLine(TailText(StartupDiagnostics.Path, 8_000));
+        sb.AppendLine();
+        sb.AppendLine("=== detailed engine startup stages ===");
+        sb.AppendLine(TailText(Path.Combine(FilesDir, "debug_init.txt"), 6_000));
         sb.AppendLine();
         sb.AppendLine("=== client config (mobile/display/interface/input) ===");
         var cfgSection = GetMobileConfigSection();

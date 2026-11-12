@@ -76,6 +76,8 @@ jobs:
         run: |
           git -C space-station-14/RobustToolbox apply --check ../../patches/fobos-mobile.patch
           git -C space-station-14/RobustToolbox apply ../../patches/fobos-mobile.patch
+          git -C space-station-14/RobustToolbox apply --check ../../patches/fobos-startup-compat.patch
+          git -C space-station-14/RobustToolbox apply ../../patches/fobos-startup-compat.patch
           git -C space-station-14 apply --check ../patches/fobos-content.patch
           git -C space-station-14 apply ../patches/fobos-content.patch
           python3 scripts/prepare-fobos.py

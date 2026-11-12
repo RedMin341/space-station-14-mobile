@@ -19,6 +19,7 @@ internal static class StartupDiagnostics
     private static DateTime _lastSampleUtc;
     private static TimeSpan _lastCpuTime;
     private static string _phase = "not started";
+    private static string _gamePhase = "SDL thread not started";
     private const long MaxFileBytes = 24 * 1024;
 
     internal static string Path => System.IO.Path.Combine(CrashReporter.FilesDir, "startup-diagnostics.txt");
@@ -32,6 +33,7 @@ internal static class StartupDiagnostics
             _lastSampleUtc = _startedUtc;
             _lastCpuTime = TimeSpan.Zero;
             _phase = "MainActivity.OnCreate";
+            _gamePhase = "SDL thread not started";
             try
             {
                 Directory.CreateDirectory(CrashReporter.FilesDir);
@@ -51,6 +53,9 @@ internal static class StartupDiagnostics
         lock (Sync)
         {
             _phase = phase;
+            if (phase.StartsWith("SDLThread:", StringComparison.Ordinal) ||
+                phase.StartsWith("GAME:", StringComparison.Ordinal))
+                _gamePhase = phase;
             WriteUnsafe("STAGE: " + phase);
         }
     }
@@ -61,12 +66,14 @@ internal static class StartupDiagnostics
         {
             DateTime now = DateTime.UtcNow;
             string phase;
+            string gamePhase;
             DateTime started;
             DateTime previous;
             TimeSpan previousCpu;
             lock (Sync)
             {
                 phase = _phase;
+                gamePhase = _gamePhase;
                 started = _startedUtc;
                 previous = _lastSampleUtc;
                 previousCpu = _lastCpuTime;
@@ -79,6 +86,15 @@ internal static class StartupDiagnostics
                 ? "no game.log"
                 : Math.Max(0, (int)(now - logUtc).TotalSeconds) + "s";
             var managedMiB = GC.GetTotalMemory(false) / (1024 * 1024);
+            string enginePhase = "engine stage not recorded";
+            try
+            {
+                var engineLog = System.IO.Path.Combine(CrashReporter.FilesDir, "debug_init.txt");
+                if (File.Exists(engineLog))
+                    enginePhase = File.ReadLines(engineLog).LastOrDefault() ?? enginePhase;
+            }
+            catch { }
+            var androidMemory = AndroidPerformance.DescribeMemory();
             var procMem = ReadProcStatus();
             string cpuUsage = "unavailable";
             try
@@ -96,8 +112,10 @@ internal static class StartupDiagnostics
 
             lock (Sync)
             {
-                WriteUnsafe($"HEARTBEAT: elapsed={(int)(now - started).TotalSeconds}s; phase={phase}; " +
-                    $"last_game_log={silentFor}; managed_heap={managedMiB}MiB; cpu={cpuUsage}; {procMem}");
+                WriteUnsafe($"HEARTBEAT: elapsed={(int)(now - started).TotalSeconds}s; " +
+                    $"game_phase={gamePhase}; android_phase={phase}; engine_phase={enginePhase}; " +
+                    $"last_game_log={silentFor}; managed_heap={managedMiB}MiB; cpu={cpuUsage}; " +
+                    $"{androidMemory}; {procMem}");
             }
         }
         catch (Exception ex)

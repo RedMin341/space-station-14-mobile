@@ -496,6 +496,7 @@ namespace Content.Android
         protected override void OnCreate(Bundle? savedInstanceState)
         {
             StartupDiagnostics.Start();
+            try { File.WriteAllText(Path.Combine(CrashReporter.FilesDir, "debug_init.txt"), ""); } catch { }
             InstallJavaCrashHandler();
             // The SDL runtime can reset orientation at startup; enforce
             // landscape in code (manifest attribute alone doesn't stick).
@@ -926,6 +927,14 @@ namespace Content.Android
 
                 var hasZip = !string.IsNullOrEmpty(mountZip) && File.Exists(mountZip);
 
+                var lowMemoryMode = AndroidPerformance.LowMemoryMode(this);
+                var disableDynamicLighting = AndroidPerformance.DisableDynamicLighting(this);
+                System.Environment.SetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_LIGHTS",
+                    disableDynamicLighting ? "1" : "0");
+                StartupDiagnostics.Mark("GAME: selected performance settings: " +
+                    $"low_memory={lowMemoryMode}; no_dynamic_lighting={disableDynamicLighting}; " +
+                    AndroidPerformance.DescribeMemory());
+
                 var args = new List<string>
                 {
                     "--cvar", "thread.parallel_count=2",
@@ -951,6 +960,19 @@ namespace Content.Android
                     "--cvar", "log.level=Info",
 #endif
                 };
+
+                if (lowMemoryMode)
+                {
+                    // On-demand textures reduce startup memory. No 1 GiB RAM limit is applied.
+                    args.AddRange(new[]
+                    {
+                        "--cvar", "res.texturepreloadingenabled=false",
+                        "--cvar", "light.max_light_count=64",
+                        "--cvar", "light.max_shadowcasting_lights=2",
+                        "--cvar", "display.max_fps=30",
+                        "--cvar", "audio.max_channels=12",
+                    });
+                }
 
                 if (!string.IsNullOrEmpty(connectAddr))
                 {
