@@ -928,11 +928,12 @@ namespace Content.Android
                 var hasZip = !string.IsNullOrEmpty(mountZip) && File.Exists(mountZip);
 
                 var lowMemoryMode = AndroidPerformance.LowMemoryMode(this);
-                var disableDynamicLighting = AndroidPerformance.DisableDynamicLighting(this);
-                System.Environment.SetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_LIGHTS",
-                    disableDynamicLighting ? "1" : "0");
+                var disableDynamicShadows = AndroidPerformance.DisableDynamicLighting(this);
+                System.Environment.SetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_SHADOWS",
+                    disableDynamicShadows ? "1" : "0");
                 StartupDiagnostics.Mark("GAME: selected performance settings: " +
-                    $"low_memory={lowMemoryMode}; no_dynamic_lighting={disableDynamicLighting}; " +
+                    $"low_memory={lowMemoryMode}; dynamic_lighting=True; " +
+                    $"shadows_enabled={!disableDynamicShadows}; " +
                     AndroidPerformance.DescribeMemory());
 
                 var args = new List<string>

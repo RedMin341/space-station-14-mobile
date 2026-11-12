@@ -1,18 +1,22 @@
 diff --git a/Robust.Client/GameController/GameController.cs b/Robust.Client/GameController/GameController.cs
 --- a/Robust.Client/GameController/GameController.cs
 +++ b/Robust.Client/GameController/GameController.cs
-@@ -147,6 +147,15 @@
+@@ -147,6 +147,17 @@
          internal bool StartupContinue(DisplayMode displayMode)
          {
              DebugTools.AssertNotNull(_resourceManifest);
 +            LogDebugInit("startup: enter GameController.StartupContinue");
-+            if (OperatingSystem.IsAndroid() &&
-+                Environment.GetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_LIGHTS") == "1")
++            if (OperatingSystem.IsAndroid())
 +            {
 +                var mobileLights = IoCManager.Resolve<ILightManager>();
-+                mobileLights.DrawLighting = false;
-+                mobileLights.DrawShadows = false;
-+                LogDebugInit("mobile: dynamic lighting and shadows disabled (FOV retained)");
++                // Preserve lamps, player lights and ambient lighting even on
++                // low-memory devices, regardless of previous activity state.
++                mobileLights.Enabled = true;
++                mobileLights.DrawLighting = true;
++                var disableShadows =
++                    Environment.GetEnvironmentVariable("SS14_MOBILE_NO_DYNAMIC_SHADOWS") == "1";
++                mobileLights.DrawShadows = !disableShadows;
++                LogDebugInit($"mobile: dynamic lighting enabled; shadows_enabled={!disableShadows}");
 +            }
  
              _loadscr.Initialize(42);

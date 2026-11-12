@@ -1970,7 +1970,7 @@ public sealed class LauncherActivity : Activity
 
         var disableLightToggle = new CheckBox(this)
         {
-            Text = "Отключить динамическое освещение",
+            Text = "Отключить динамические тени (свет останется)",
             TextSize = 13,
             Checked = AndroidPerformance.DisableDynamicLighting(this)
         };
@@ -1986,6 +1986,7 @@ public sealed class LauncherActivity : Activity
             Text = "Изменения применяются при следующем запуске игры. " +
                    "На устройствах с 6 ГБ ОЗУ или меньше оба режима включены по умолчанию. " +
                    "Экономия снижает качество и отложенно загружает текстуры. " +
+                   "Лампы и фонари всегда работают, независимо от настройки теней. " +
                    "ОЗУ используется по необходимости, без ограничения в 1 ГБ.",
             TextSize = 11
         };
