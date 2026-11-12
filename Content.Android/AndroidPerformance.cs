@@ -14,7 +14,7 @@ internal static class AndroidPerformance
     internal const string DisableLightingKey = "disable_dynamic_lighting";
     private const string PreferencesName = "ss14_mobile_config";
     private const long MiB = 1024L * 1024L;
-    private const long AutoLowMemoryLimit = 3L * 1024L * MiB;
+    private const long AutoLowMemoryLimit = 6L * 1024L * MiB;
 
     internal static bool LowMemoryMode(Context context)
     {
