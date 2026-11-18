@@ -6,7 +6,7 @@ namespace Content.Android;
 internal static class FobosBuild
 {
     public const string Engine = "276.0.6";
-    public const string ContentRevision = "203c66fe0d7e9c3befb0b2876c7ea70d05ba1018";
+    public const string ContentRevision = "32d6ee593940eae71489391a4b59e3bc776a6678";
     public const string Fork = "dsfobos";
 
     // Content.Client and Content.Shared are compiled into this APK. A server

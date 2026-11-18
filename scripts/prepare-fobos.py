@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import zipfile
 
-CONTENT = "203c66fe0d7e9c3befb0b2876c7ea70d05ba1018"
+CONTENT = "32d6ee593940eae71489391a4b59e3bc776a6678"
 ENGINE = "3ddb9b0625e34a28e8d96010f2eb68e753c38d50"
 
 for directory, expected in (("space-station-14", CONTENT), ("space-station-14/RobustToolbox", ENGINE)):
